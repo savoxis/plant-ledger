@@ -121,6 +121,10 @@ documented instead or in addition.
 | POST   | `/api/plants/:id/photos`  | Add a photo (multipart) — adds, doesn't replace |
 | DELETE | `/api/plants/:id/photos/:photoId` | Remove one specific photo |
 | GET    | `/api/export`             | Download a JSON snapshot         |
+| GET    | `/api/claude-snapshot`    | JSON snapshot with every photo embedded as base64 — built for an LLM agent to fetch in one shot, see [CLAUDE.md](./CLAUDE.md) |
+| POST   | `/api/plants/bulk-update` | Apply the same partial update to several plants at once |
+| POST   | `/api/plants/bulk-logs`   | Add the same log entry to several plants at once |
+| POST   | `/api/plants/confirm-moves` | Apply pending "planned new spot" moves for several (or all) plants at once |
 
 Each plant supports multiple photos (`photos: [{id, url}, ...]` in the
 API response), ordered by upload order.

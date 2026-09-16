@@ -258,6 +258,87 @@ app.post('/api/plants/:id/logs', (req, res) => {
   res.json(rowToPlant(db.prepare('SELECT * FROM plants WHERE id = ?').get(req.params.id)));
 });
 
+// Bulk operations, meant for an agent acting on several plants from one
+// natural-language request ("mark these three confirmed", "I fertilized
+// everything in the office"). Deliberately no bulk delete -- removing a
+// plant stays one call per plant so a single bad request can't wipe out
+// several at once. Callers are expected to resolve names to ids via
+// GET /api/plants first; these never do fuzzy name matching themselves.
+const BULK_UPDATE_FIELDS = ['name', 'room', 'group', 'status', 'notes', 'propagating', 'newLocation'];
+
+app.post('/api/plants/bulk-update', (req, res) => {
+  const { ids, changes } = req.body;
+  if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: 'ids must be a non-empty array' });
+  if (!changes || typeof changes !== 'object') return res.status(400).json({ error: 'changes object is required' });
+
+  const updated = [];
+  const notFound = [];
+  const applyOne = db.transaction((id) => {
+    const existing = db.prepare('SELECT * FROM plants WHERE id = ?').get(id);
+    if (!existing) { notFound.push(id); return; }
+    db.prepare(`
+      UPDATE plants SET name=?, room=?, group_name=?, status=?, notes=?, propagating=?, new_location=?
+      WHERE id=?
+    `).run(
+      changes.name ?? existing.name,
+      changes.room ?? existing.room,
+      changes.group ?? existing.group_name,
+      changes.status ?? existing.status,
+      changes.notes ?? existing.notes,
+      changes.propagating !== undefined ? (changes.propagating ? 1 : 0) : existing.propagating,
+      changes.newLocation !== undefined ? changes.newLocation : existing.new_location,
+      id
+    );
+    updated.push(rowToPlant(db.prepare('SELECT * FROM plants WHERE id = ?').get(id)));
+  });
+  ids.forEach(applyOne);
+  res.json({ updated, notFound });
+});
+
+app.post('/api/plants/bulk-logs', (req, res) => {
+  const { ids, type, note } = req.body;
+  if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: 'ids must be a non-empty array' });
+  if (!type) return res.status(400).json({ error: 'type is required' });
+  const date = new Date().toISOString().slice(0, 10);
+
+  const updated = [];
+  const notFound = [];
+  const applyOne = db.transaction((id) => {
+    const existing = db.prepare('SELECT * FROM plants WHERE id = ?').get(id);
+    if (!existing) { notFound.push(id); return; }
+    db.prepare('INSERT INTO logs (plant_id, date, type, note) VALUES (?, ?, ?, ?)').run(id, date, type, note || '');
+    updated.push(rowToPlant(db.prepare('SELECT * FROM plants WHERE id = ?').get(id)));
+  });
+  ids.forEach(applyOne);
+  res.json({ updated, notFound });
+});
+
+// Applies every plant's pending "planned new spot" (newLocation) as its
+// actual room, same as the single-plant "Confirm move" button in the UI,
+// just for many at once. Pass {ids: [...]} to restrict it, or omit ids
+// to apply every plant that currently has a pending move.
+app.post('/api/plants/confirm-moves', (req, res) => {
+  const { ids } = req.body || {};
+  const candidates = Array.isArray(ids) && ids.length
+    ? ids.map((id) => db.prepare('SELECT * FROM plants WHERE id = ?').get(id)).filter(Boolean)
+    : db.prepare("SELECT * FROM plants WHERE new_location IS NOT NULL AND new_location != ''").all();
+
+  const moved = [];
+  const applyOne = db.transaction((plant) => {
+    if (!plant.new_location) return;
+    db.prepare('UPDATE plants SET room = ?, new_location = ? WHERE id = ?').run(plant.new_location, '', plant.id);
+    db.prepare('INSERT INTO logs (plant_id, date, type, note) VALUES (?, ?, ?, ?)').run(
+      plant.id,
+      new Date().toISOString().slice(0, 10),
+      'Other',
+      `Moved to ${plant.new_location}`
+    );
+    moved.push(rowToPlant(db.prepare('SELECT * FROM plants WHERE id = ?').get(plant.id)));
+  });
+  candidates.forEach(applyOne);
+  res.json({ moved });
+});
+
 // Multiple photos per plant. Uploading adds one to the end of the
 // list rather than replacing what's there; deleting removes just the
 // one photo named.
@@ -311,6 +392,32 @@ app.get('/api/export', (req, res) => {
     `attachment; filename="plant-ledger-export-${new Date().toISOString().slice(0, 10)}.json"`
   );
   res.json(rows);
+});
+
+// One-shot snapshot for an LLM agent to fetch: everything /api/plants
+// has, plus every photo embedded as a base64 data URI so a single
+// authenticated request gets the full picture (literally) with no
+// follow-up fetches against /photos. Meant for occasional "what's the
+// current state of my plants" checks, not polling -- it reads every
+// photo file off disk on every call.
+app.get('/api/claude-snapshot', (req, res) => {
+  const rows = db.prepare('SELECT * FROM plants ORDER BY room, name').all();
+  const plants = rows.map((row) => {
+    const plant = rowToPlant(row);
+    plant.photos = plant.photos.map((p) => {
+      const filename = p.url.split('/').pop();
+      let data = null;
+      try {
+        const buf = fs.readFileSync(path.join(PHOTOS_DIR, filename));
+        data = `data:image/jpeg;base64,${buf.toString('base64')}`;
+      } catch (err) {
+        // file missing/unreadable -- omit the data URI, keep the url
+      }
+      return { id: p.id, url: p.url, data };
+    });
+    return plant;
+  });
+  res.json({ generatedAt: new Date().toISOString(), plants });
 });
 
 const server = app.listen(PORT, () => console.log(`Plant Ledger listening on port ${PORT}`));
