@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>plant-ledger</Name>
+  <Repository>ghcr.io/savoxis/plant-ledger:latest</Repository>
+  <Registry>https://github.com/savoxis/plant-ledger/pkgs/container/plant-ledger</Registry>
+  <Network>bridge</Network>
+  <MyIP/>
+  <Shell>sh</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/savoxis/plant-ledger/issues</Support>
+  <Project>https://github.com/savoxis/plant-ledger</Project>
+  <Overview>Self-hosted houseplant tracker: searchable inventory, per-plant photos, care-group tagging, and a soil/fertilizer/repot log. Single container, SQLite-backed, no external dependencies. Fronted by greatestnotion.com via Nginx Proxy Manager.</Overview>
+  <Category>Tools:</Category>
+  <WebUI>http://[IP]:[PORT:3210]/</WebUI>
+  <TemplateURL/>
+  <Icon></Icon>
+  <ExtraParams/>
+  <PostArgs/>
+  <CPUset/>
+  <DateInstalled/>
+  <DonateText/>
+  <DonateLink/>
+  <Requires/>
+  <Config Name="WebUI Port" Target="3000" Default="3210" Mode="tcp" Description="Host port mapped to the app's internal port 3000" Type="Port" Display="always" Required="true" Mask="false">3210</Config>
+  <Config Name="Data" Target="/data" Default="/mnt/user/appdata/plant-ledger" Mode="rw" Description="SQLite DB + photos - this folder is the entire application state" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/plant-ledger</Config>
+  <Config Name="AUTH_PASSWORD" Target="AUTH_PASSWORD" Default="" Mode="" Description="App-level HTTP Basic Auth backstop password. Leave blank to disable (rely on the NPM Access List only)." Type="Variable" Display="always" Required="false" Mask="true"></Config>
+</Container>
