@@ -1,9 +1,15 @@
 # Plant Ledger
 
-Self-hosted houseplant tracker: searchable inventory, per-plant photo,
-care-group tagging, and a soil/fertilizer/repot log. Runs as a single
+Self-hosted houseplant tracker: searchable inventory, multiple photos
+per plant, care-group tagging, and a soil/fertilizer/repot log. Runs as a single
 Docker container on Unraid, fronted by Nginx Proxy Manager (NPM) at
 `greatestnotion.com`.
+
+If you're using Claude (in Claude Code or otherwise) to manage plant
+data conversationally against this app — adding plants, logging care
+events, sorting out enum values from casual descriptions — see
+[`CLAUDE.md`](./CLAUDE.md) instead of this file; it's written for that,
+not for a human deploying the app.
 
 ## Architecture
 
@@ -110,14 +116,18 @@ documented instead or in addition.
 | GET    | `/api/plants`            | List all plants + logs           |
 | POST   | `/api/plants`             | Create a plant                   |
 | PUT    | `/api/plants/:id`         | Update a plant                   |
-| DELETE | `/api/plants/:id`         | Delete a plant (+ its photo)     |
+| DELETE | `/api/plants/:id`         | Delete a plant (+ all its photos) |
 | POST   | `/api/plants/:id/logs`    | Add a log entry                  |
-| POST   | `/api/plants/:id/photo`   | Upload/replace photo (multipart) |
-| DELETE | `/api/plants/:id/photo`   | Remove photo                     |
+| POST   | `/api/plants/:id/photos`  | Add a photo (multipart) — adds, doesn't replace |
+| DELETE | `/api/plants/:id/photos/:photoId` | Remove one specific photo |
 | GET    | `/api/export`             | Download a JSON snapshot         |
 
-No route requires a token, cookie, or header. Anything that can reach
-the container on its listening port has full read/write/delete access.
+Each plant supports multiple photos (`photos: [{id, url}, ...]` in the
+API response), ordered by upload order.
+
+No route requires a token, cookie, or header beyond the optional
+`AUTH_PASSWORD` backstop below. Anything that can reach the container
+on its listening port has full read/write/delete access.
 
 ## Exposure & access control
 
@@ -146,9 +156,17 @@ ever gets removed or misconfigured on the NPM side.
   app logs a warning on startup — it does not fail closed. Don't rely
   on this alone; it's a backstop behind the NPM Access List, not a
   replacement for it.
-- This is a single shared password with no rate limiting, no lockout,
-  and no per-user accounts. Fine as a second layer behind NPM. Not
-  something to expose directly to the internet on its own.
+- Brute-force guard: wrong guesses get progressively slower (250ms ×
+  attempt count), and after 5 failures the app locks out **all**
+  requests (right password included) for 30 seconds, doubling on each
+  repeat lockout up to a 15-minute cap. This is tracked globally, not
+  per-IP — there's one shared password and no accounts, so there's
+  nothing meaningful to key per-IP throttling on without also trusting
+  `X-Forwarded-For` from the NPM proxy. State resets on container
+  restart.
+- Still a single shared password with no per-user accounts. Fine as a
+  second layer behind NPM. Not something to expose directly to the
+  internet on its own.
 
 ### NPM proxy host — what it needs to be set to
 

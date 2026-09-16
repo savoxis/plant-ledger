@@ -37,6 +37,27 @@ db.exec(`
     note TEXT,
     FOREIGN KEY(plant_id) REFERENCES plants(id) ON DELETE CASCADE
   );
+  CREATE TABLE IF NOT EXISTS photos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    plant_id TEXT NOT NULL,
+    filename TEXT NOT NULL,
+    position INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY(plant_id) REFERENCES plants(id) ON DELETE CASCADE
+  );
+`);
+
+// One-time, idempotent migration: plants.photo_filename was the old
+// single-photo column. Any plant that still has one set but no rows
+// in `photos` yet gets it carried over as photo #1. The column itself
+// is left in place (unused from here on) rather than dropped, since
+// dropping columns on someone's live data isn't worth the risk for a
+// column that just sits there harmlessly.
+db.exec(`
+  INSERT INTO photos (plant_id, filename, position)
+  SELECT id, photo_filename, 0 FROM plants
+  WHERE photo_filename IS NOT NULL
+  AND id NOT IN (SELECT plant_id FROM photos)
 `);
 
 // One-time seed on first boot (empty DB only) -- decodes any embedded
@@ -47,20 +68,17 @@ if (existingCount === 0) {
   if (fs.existsSync(seedPath)) {
     const seed = JSON.parse(fs.readFileSync(seedPath, 'utf8'));
     const insertPlant = db.prepare(`
-      INSERT INTO plants (id, name, room, group_name, status, notes, propagating, new_location, photo_filename)
-      VALUES (@id, @name, @room, @group_name, @status, @notes, @propagating, @new_location, @photo_filename)
+      INSERT INTO plants (id, name, room, group_name, status, notes, propagating, new_location)
+      VALUES (@id, @name, @room, @group_name, @status, @notes, @propagating, @new_location)
     `);
     const insertLog = db.prepare(
       'INSERT INTO logs (plant_id, date, type, note) VALUES (?, ?, ?, ?)'
     );
+    const insertPhoto = db.prepare(
+      'INSERT INTO photos (plant_id, filename, position) VALUES (?, ?, ?)'
+    );
     const seedTx = db.transaction((items) => {
       for (const p of items) {
-        let photoFilename = null;
-        if (p.photo && p.photo.startsWith('data:image')) {
-          const b64 = p.photo.split(',')[1];
-          photoFilename = `${p.id}.jpg`;
-          fs.writeFileSync(path.join(PHOTOS_DIR, photoFilename), Buffer.from(b64, 'base64'));
-        }
         insertPlant.run({
           id: p.id,
           name: p.name,
@@ -70,8 +88,13 @@ if (existingCount === 0) {
           notes: p.notes || '',
           propagating: p.propagating ? 1 : 0,
           new_location: p.newLocation || '',
-          photo_filename: photoFilename,
         });
+        if (p.photo && p.photo.startsWith('data:image')) {
+          const b64 = p.photo.split(',')[1];
+          const photoFilename = `${p.id}.jpg`;
+          fs.writeFileSync(path.join(PHOTOS_DIR, photoFilename), Buffer.from(b64, 'base64'));
+          insertPhoto.run(p.id, photoFilename, 0);
+        }
         (p.log || []).forEach((l) => insertLog.run(p.id, l.date, l.type, l.note || ''));
       }
     });
@@ -90,8 +113,30 @@ const AUTH_PASSWORD = process.env.AUTH_PASSWORD || '';
 if (!AUTH_PASSWORD) {
   console.warn('AUTH_PASSWORD not set -- app-level lock is DISABLED. Set AUTH_PASSWORD to enable it.');
 } else {
-  app.use((req, res, next) => {
+  // Brute-force guard. There's one shared password and no per-user
+  // accounts, so this tracks failures globally rather than per-IP
+  // (per-IP would need to trust X-Forwarded-For from the NPM proxy,
+  // which is one more thing to get wrong for little benefit here).
+  // Each wrong guess gets slower, and repeated lockouts back off
+  // exponentially, up to a cap.
+  const MAX_ATTEMPTS = 5;
+  const BASE_LOCKOUT_MS = 30 * 1000;
+  const MAX_LOCKOUT_MS = 15 * 60 * 1000;
+  let failedAttempts = 0;
+  let consecutiveLockouts = 0;
+  let lockedUntil = 0;
+
+  const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  app.use(async (req, res, next) => {
     if (req.path === '/api/health') return next();
+
+    const now = Date.now();
+    if (now < lockedUntil) {
+      res.set('Retry-After', String(Math.ceil((lockedUntil - now) / 1000)));
+      return res.status(429).send('Too many failed attempts. Try again later.');
+    }
+
     const header = req.headers.authorization || '';
     const [scheme, encoded] = header.split(' ');
     let suppliedPassword = '';
@@ -102,10 +147,23 @@ if (!AUTH_PASSWORD) {
     const supplied = Buffer.from(suppliedPassword);
     const expected = Buffer.from(AUTH_PASSWORD);
     const match = supplied.length === expected.length && crypto.timingSafeEqual(supplied, expected);
+
     if (!match) {
+      failedAttempts++;
+      await delay(Math.min(failedAttempts, 10) * 250);
+      if (failedAttempts >= MAX_ATTEMPTS) {
+        const lockoutMs = Math.min(BASE_LOCKOUT_MS * 2 ** consecutiveLockouts, MAX_LOCKOUT_MS);
+        lockedUntil = Date.now() + lockoutMs;
+        consecutiveLockouts++;
+        failedAttempts = 0;
+        console.warn(`AUTH_PASSWORD: locked out for ${lockoutMs / 1000}s after repeated failed attempts`);
+      }
       res.set('WWW-Authenticate', 'Basic realm="Plant Ledger"');
       return res.status(401).send('Authentication required');
     }
+
+    failedAttempts = 0;
+    consecutiveLockouts = 0;
     next();
   });
 }
@@ -120,6 +178,10 @@ function rowToPlant(row) {
   const logs = db
     .prepare('SELECT date, type, note FROM logs WHERE plant_id = ? ORDER BY id DESC')
     .all(row.id);
+  const photos = db
+    .prepare('SELECT id, filename FROM photos WHERE plant_id = ? ORDER BY position, id')
+    .all(row.id)
+    .map((p) => ({ id: p.id, url: `/photos/${p.filename}` }));
   return {
     id: row.id,
     name: row.name,
@@ -129,7 +191,7 @@ function rowToPlant(row) {
     notes: row.notes,
     propagating: !!row.propagating,
     newLocation: row.new_location || '',
-    photoUrl: row.photo_filename ? `/photos/${row.photo_filename}` : '',
+    photos,
     log: logs,
   };
 }
@@ -173,11 +235,11 @@ app.put('/api/plants/:id', (req, res) => {
 });
 
 app.delete('/api/plants/:id', (req, res) => {
-  const row = db.prepare('SELECT * FROM plants WHERE id = ?').get(req.params.id);
-  if (row && row.photo_filename) {
-    const fp = path.join(PHOTOS_DIR, row.photo_filename);
+  const photos = db.prepare('SELECT filename FROM photos WHERE plant_id = ?').all(req.params.id);
+  photos.forEach((p) => {
+    const fp = path.join(PHOTOS_DIR, p.filename);
     if (fs.existsSync(fp)) fs.unlinkSync(fp);
-  }
+  });
   db.prepare('DELETE FROM plants WHERE id = ?').run(req.params.id);
   res.json({ ok: true });
 });
@@ -196,15 +258,13 @@ app.post('/api/plants/:id/logs', (req, res) => {
   res.json(rowToPlant(db.prepare('SELECT * FROM plants WHERE id = ?').get(req.params.id)));
 });
 
-app.post('/api/plants/:id/photo', upload.single('photo'), async (req, res) => {
+// Multiple photos per plant. Uploading adds one to the end of the
+// list rather than replacing what's there; deleting removes just the
+// one photo named.
+app.post('/api/plants/:id/photos', upload.single('photo'), async (req, res) => {
   const plant = db.prepare('SELECT * FROM plants WHERE id = ?').get(req.params.id);
   if (!plant) return res.status(404).json({ error: 'not found' });
   if (!req.file) return res.status(400).json({ error: 'no file uploaded' });
-
-  if (plant.photo_filename) {
-    const old = path.join(PHOTOS_DIR, plant.photo_filename);
-    if (fs.existsSync(old)) fs.unlinkSync(old);
-  }
 
   const filename = `${req.params.id}-${Date.now()}.jpg`;
   try {
@@ -217,18 +277,28 @@ app.post('/api/plants/:id/photo', upload.single('photo'), async (req, res) => {
     return res.status(400).json({ error: 'could not process image' });
   }
 
-  db.prepare('UPDATE plants SET photo_filename = ? WHERE id = ?').run(filename, req.params.id);
+  const nextPosition = db
+    .prepare('SELECT COALESCE(MAX(position), -1) + 1 AS pos FROM photos WHERE plant_id = ?')
+    .get(req.params.id).pos;
+  db.prepare('INSERT INTO photos (plant_id, filename, position) VALUES (?, ?, ?)').run(
+    req.params.id,
+    filename,
+    nextPosition
+  );
   res.json(rowToPlant(db.prepare('SELECT * FROM plants WHERE id = ?').get(req.params.id)));
 });
 
-app.delete('/api/plants/:id/photo', (req, res) => {
+app.delete('/api/plants/:id/photos/:photoId', (req, res) => {
   const plant = db.prepare('SELECT * FROM plants WHERE id = ?').get(req.params.id);
   if (!plant) return res.status(404).json({ error: 'not found' });
-  if (plant.photo_filename) {
-    const fp = path.join(PHOTOS_DIR, plant.photo_filename);
-    if (fs.existsSync(fp)) fs.unlinkSync(fp);
-  }
-  db.prepare('UPDATE plants SET photo_filename = NULL WHERE id = ?').run(req.params.id);
+  const photo = db
+    .prepare('SELECT * FROM photos WHERE id = ? AND plant_id = ?')
+    .get(req.params.photoId, req.params.id);
+  if (!photo) return res.status(404).json({ error: 'photo not found' });
+
+  const fp = path.join(PHOTOS_DIR, photo.filename);
+  if (fs.existsSync(fp)) fs.unlinkSync(fp);
+  db.prepare('DELETE FROM photos WHERE id = ?').run(photo.id);
   res.json(rowToPlant(db.prepare('SELECT * FROM plants WHERE id = ?').get(req.params.id)));
 });
 

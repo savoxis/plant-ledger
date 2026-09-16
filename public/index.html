@@ -6,106 +6,125 @@
 <title>Plant Ledger</title>
 <link rel="icon" type="image/svg+xml" href="/icon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
   :root{
-    --bg:#FAF7F0; --card:#FFFFFF; --ink:#232019; --ink-soft:#5C564C;
-    --forest:#1F3A2E; --forest-dark:#152A20; --sage:#7C9473; --sage-light:#E4EAE0;
-    --soil:#6B4A2F; --soil-light:#F1E6DA; --gold:#C9A227; --line:#E6E1D6; --danger:#A63D2F;
+    --bg:#EFF4FC; --card:#FFFFFF; --ink:#16233B; --ink-soft:#5B6B85; --ink-muted:#8A9AB5;
+    --accent:#2563EB; --accent-light:#60A5FA; --accent-bg:#E6F0FF; --accent-bg-soft:#F0F5FE;
+    --line:#EEF3FC; --field-border:#DCE6F5; --danger:#C0392B;
+    --status-bg:#FEF3D6; --status-fg:#B4790C;
+    --prop-bg:#E0F2FE; --prop-fg:#0369A1;
+    --group1-bg:#E6F0FF; --group1-fg:#2563EB;
+    --group2-bg:#E3F5EC; --group2-fg:#1C7A4E;
+    --group3-bg:#F5E6DC; --group3-fg:#9C5B33;
+    --group-special-bg:#EFE3FB; --group-special-fg:#6B3FA0;
+    --gradient:linear-gradient(135deg,#2563EB,#60A5FA);
   }
   *{box-sizing:border-box;}
-  body{margin:0;background:var(--bg);color:var(--ink);font-family:'Inter',system-ui,sans-serif;padding-bottom:100px;}
-  h1,h2,h3,.serif{font-family:'Fraunces',serif;}
-  header{background:var(--forest);color:#F5F2E9;padding:22px 18px 18px;border-bottom:3px solid var(--gold);}
-  header h1{margin:0;font-size:1.6rem;font-weight:500;}
-  header p{margin:4px 0 0;color:#C9D6CB;font-size:0.85rem;}
-  .search-bar{position:sticky;top:0;z-index:20;background:var(--bg);padding:14px 18px 10px;border-bottom:1px solid var(--line);}
-  #search{width:100%;padding:12px 14px;font-size:1rem;border:2px solid var(--sage);border-radius:10px;background:var(--card);color:var(--ink);font-family:'Inter',sans-serif;}
-  #search:focus{outline:none;border-color:var(--forest);}
-  .search-count{font-size:0.78rem;color:var(--ink-soft);margin-top:6px;}
-  .filters{display:flex;gap:8px;overflow-x:auto;padding:10px 18px 4px;-webkit-overflow-scrolling:touch;}
-  .chip{flex:0 0 auto;padding:6px 14px;border-radius:999px;border:1px solid var(--sage);background:var(--card);color:var(--forest);font-size:0.82rem;font-weight:500;cursor:pointer;white-space:nowrap;}
-  .chip.active{background:var(--forest);border-color:var(--forest);color:#fff;}
-  .util-bar{display:flex;gap:10px;padding:8px 18px 4px;}
-  .util-btn{flex:1;text-align:center;font-size:0.78rem;font-weight:600;color:var(--soil);background:var(--soil-light);padding:8px 10px;border-radius:8px;border:none;cursor:pointer;text-decoration:none;}
-  main{padding:14px 18px;}
-  .room-heading{display:flex;align-items:baseline;gap:8px;margin:22px 0 10px;padding-left:10px;border-left:4px solid var(--gold);}
-  .room-heading h2{margin:0;font-size:1.15rem;font-weight:500;color:var(--forest-dark);}
-  .room-heading span{font-size:0.8rem;color:var(--ink-soft);}
-  .plant-card{background:var(--card);border:1px solid var(--line);border-radius:12px;margin-bottom:10px;overflow:hidden;}
-  .plant-head{padding:13px 14px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;gap:10px;}
-  .plant-head-main{display:flex;align-items:center;gap:10px;}
-  .thumb{width:42px;height:42px;border-radius:8px;object-fit:cover;flex-shrink:0;border:1px solid var(--line);}
-  .plant-name{font-weight:600;font-size:0.98rem;line-height:1.3;}
-  .badge-row{margin-top:5px;display:flex;gap:6px;flex-wrap:wrap;}
-  .badge{font-size:0.7rem;padding:2px 8px;border-radius:999px;font-weight:600;}
-  .badge.group-1{background:var(--sage-light);color:var(--forest-dark);}
-  .badge.group-2{background:#EFE7D6;color:#7A6A2E;}
-  .badge.group-3{background:#F3E4DC;color:var(--soil);}
-  .badge.group-special{background:#E6DCF0;color:#5B3E7A;}
-  .badge.status-tentative{background:#FBE9C6;color:#8A6416;}
-  .badge.status-unconfirmed{background:#F5DADA;color:var(--danger);}
-  .badge.propagating{background:#DCEEFB;color:#2A6690;}
-  .move-badge{display:inline-flex;align-items:center;gap:4px;font-size:0.72rem;color:#2A6690;background:#DCEEFB;padding:2px 8px;border-radius:999px;font-weight:600;margin-top:5px;}
-  .chevron{color:var(--ink-soft);font-size:0.9rem;transition:transform 0.15s ease;flex-shrink:0;}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:'Inter',system-ui,sans-serif;}
+  h1,h2,h3,.heading{font-family:'Manrope',sans-serif;}
+  ::-webkit-scrollbar{width:6px;} ::-webkit-scrollbar-thumb{background:rgba(37,99,235,0.2);border-radius:3px;}
+  .app-shell{max-width:720px;margin:0 auto;min-height:100vh;background:var(--bg);padding-bottom:100px;position:relative;}
+  header{background:var(--gradient);color:#fff;padding:28px 24px 24px;border-radius:0 0 28px 28px;}
+  header h1{margin:0;font-size:24px;font-weight:800;}
+  header p{margin:5px 0 0;color:#DCE9FE;font-size:13px;font-weight:500;}
+  .self-hosted-badge{display:inline-flex;align-items:center;gap:6px;background:rgba(255,255,255,0.16);border-radius:999px;padding:6px 12px 6px 8px;margin-top:10px;}
+  .self-hosted-badge span{font-size:10.5px;font-weight:700;color:#fff;white-space:nowrap;}
+  .search-bar{padding:18px 24px 8px;margin-top:-18px;}
+  #search{width:100%;box-sizing:border-box;border:none;border-radius:14px;padding:13px 16px;font-size:14px;color:var(--ink);background:var(--card);box-shadow:0 8px 20px rgba(37,99,235,0.14);font-family:'Inter',sans-serif;}
+  #search:focus{outline:2px solid var(--accent-light);outline-offset:1px;}
+  .search-count{font-size:12px;color:var(--ink-soft);padding:8px 24px 0;}
+  .filters{display:flex;gap:8px;overflow-x:auto;padding:10px 24px 12px;-webkit-overflow-scrolling:touch;}
+  .chip{flex:0 0 auto;padding:7px 15px;border-radius:999px;border:none;background:var(--card);color:var(--accent);font-size:12.5px;font-weight:700;cursor:pointer;white-space:nowrap;box-shadow:0 2px 8px rgba(37,99,235,0.1);}
+  .chip.active{background:var(--accent);color:#fff;box-shadow:none;}
+  .util-bar{display:flex;gap:10px;padding:0 24px 4px;}
+  .util-btn{flex:1;text-align:center;font-size:12.5px;font-weight:700;color:var(--accent);background:var(--accent-bg-soft);padding:10px;border-radius:10px;border:none;cursor:pointer;text-decoration:none;}
+  main{padding:0 24px;}
+  .room-heading{display:flex;align-items:baseline;gap:8px;margin:20px 0 10px;}
+  .room-heading h2{margin:0;font-size:15px;font-weight:700;color:var(--ink);white-space:nowrap;}
+  .room-heading span{font-size:11px;color:var(--ink-muted);}
+  .plant-card{background:var(--card);border-radius:16px;margin-bottom:10px;overflow:hidden;box-shadow:0 6px 18px rgba(37,99,235,0.08);}
+  .plant-head{padding:13px 14px;display:flex;align-items:center;gap:11px;cursor:pointer;}
+  .thumb, .thumb-placeholder{width:44px;height:44px;border-radius:11px;object-fit:cover;flex-shrink:0;}
+  .thumb-placeholder{background:var(--accent-bg);display:flex;align-items:center;justify-content:center;color:var(--accent);}
+  .plant-head-info{flex:1;min-width:0;}
+  .plant-name{font-weight:700;font-size:14px;line-height:1.3;color:var(--ink);}
+  .badge-row{margin-top:5px;display:flex;gap:5px;flex-wrap:wrap;}
+  .badge{font-size:10px;padding:3px 9px;border-radius:999px;font-weight:700;white-space:nowrap;}
+  .badge.group-1{background:var(--group1-bg);color:var(--group1-fg);}
+  .badge.group-2{background:var(--group2-bg);color:var(--group2-fg);}
+  .badge.group-3{background:var(--group3-bg);color:var(--group3-fg);}
+  .badge.group-special{background:var(--group-special-bg);color:var(--group-special-fg);}
+  .badge.status-tentative, .badge.status-unconfirmed{background:var(--status-bg);color:var(--status-fg);}
+  .badge.propagating{background:var(--prop-bg);color:var(--prop-fg);}
+  .move-badge{display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--prop-fg);background:var(--prop-bg);padding:3px 9px;border-radius:999px;font-weight:700;margin-top:5px;}
+  .chevron{color:var(--ink-muted);font-size:13px;transition:transform 0.15s ease;flex-shrink:0;}
   .plant-card.open .chevron{transform:rotate(90deg);}
-  .plant-body{display:none;padding:0 14px 14px;border-top:1px solid var(--line);}
+  .plant-body{display:none;padding:0 14px 16px;border-top:1px solid var(--line);}
   .plant-card.open .plant-body{display:block;}
-  .plant-photo{width:100%;max-height:280px;object-fit:cover;border-radius:10px;margin-top:10px;display:block;border:1px solid var(--line);}
-  .photo-upload-row{margin-top:8px;display:flex;align-items:center;gap:8px;}
-  .photo-upload-label{font-size:0.78rem;color:var(--forest);font-weight:600;cursor:pointer;background:var(--sage-light);padding:7px 12px;border-radius:8px;display:inline-block;position:relative;}
+  .plant-photo-placeholder{width:100%;height:180px;object-fit:cover;border-radius:14px;margin-top:12px;display:flex;background:var(--accent-bg);align-items:center;justify-content:center;color:var(--accent);}
+  .photo-gallery{display:flex;gap:8px;overflow-x:auto;margin-top:12px;padding-bottom:2px;-webkit-overflow-scrolling:touch;}
+  .gallery-photo-wrap{position:relative;flex:0 0 auto;}
+  .gallery-photo{width:140px;height:140px;object-fit:cover;border-radius:14px;display:block;}
+  .gallery-remove{position:absolute;top:6px;right:6px;width:22px;height:22px;border-radius:999px;background:rgba(22,35,59,0.6);color:#fff;border:none;font-size:13px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;padding:0;}
+  .photo-upload-row{margin-top:10px;display:flex;align-items:center;gap:8px;}
+  .photo-upload-label{font-size:12.5px;color:var(--accent);font-weight:700;cursor:pointer;background:var(--accent-bg-soft);padding:8px 12px;border-radius:8px;display:inline-block;position:relative;}
   .photo-upload-label input[type="file"]{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;}
-  .photo-remove{font-size:0.75rem;color:var(--danger);background:none;border:none;text-decoration:underline;cursor:pointer;}
-  .notes{font-size:0.88rem;color:var(--ink-soft);margin:10px 0;line-height:1.5;}
+  .notes{font-size:13px;color:var(--ink-soft);margin:10px 0;line-height:1.5;}
   .location-field{margin:10px 0;}
-  .location-field label{display:block;font-size:0.72rem;font-weight:600;color:var(--ink-soft);margin-bottom:4px;}
-  .location-field input, .location-field select{width:100%;padding:8px 10px;border:1px solid var(--sage);border-radius:6px;font-family:'Inter',sans-serif;font-size:0.85rem;background:#F7FAF5;color:var(--ink);}
+  .location-field label{display:block;font-size:12px;font-weight:700;color:var(--ink-soft);margin-bottom:5px;}
+  .location-field input, .location-field select{width:100%;padding:9px 10px;border:1px solid var(--field-border);border-radius:8px;font-family:'Inter',sans-serif;font-size:13px;background:#fff;color:var(--ink);}
   .log-list{margin:10px 0;}
-  .log-entry{display:flex;gap:10px;padding:7px 0;border-bottom:1px dashed var(--line);font-size:0.83rem;}
+  .log-entry{display:flex;gap:10px;padding:7px 0;border-bottom:1px dashed var(--line);font-size:12.5px;}
   .log-entry:last-child{border-bottom:none;}
-  .log-date{color:var(--ink-soft);white-space:nowrap;flex-shrink:0;}
-  .log-type{font-weight:600;flex-shrink:0;}
-  .log-type.Soil{color:var(--soil);} .log-type.Fertilizer{color:#5B7A3A;} .log-type.Repot{color:#2A6690;} .log-type.Other{color:var(--ink-soft);}
-  .empty-log{font-size:0.82rem;color:var(--ink-soft);font-style:italic;}
-  .btn{font-family:'Inter',sans-serif;font-weight:600;border:none;border-radius:8px;padding:9px 14px;font-size:0.85rem;cursor:pointer;}
-  .btn-log{background:var(--soil-light);color:var(--soil);width:100%;margin-top:6px;}
-  .btn-primary{background:var(--forest);color:#fff;}
-  .btn-secondary{background:var(--sage-light);color:var(--forest-dark);}
-  .btn-delete{background:none;color:var(--danger);font-size:0.78rem;padding:4px 0;text-decoration:underline;}
-  .log-form{display:none;gap:8px;margin-top:10px;padding:10px;background:var(--bg);border-radius:8px;flex-direction:column;}
+  .log-date{color:var(--ink-muted);white-space:nowrap;flex-shrink:0;}
+  .log-type{font-weight:700;flex-shrink:0;color:var(--accent);}
+  .empty-log{font-size:12.5px;color:var(--ink-muted);font-style:italic;}
+  .btn{font-family:'Inter',sans-serif;font-weight:700;border:none;border-radius:10px;padding:10px 14px;font-size:13px;cursor:pointer;}
+  .btn-log{background:var(--accent-bg-soft);color:var(--accent);width:100%;margin-top:10px;}
+  .btn-primary{background:var(--gradient);color:#fff;}
+  .btn-secondary{background:var(--accent-bg-soft);color:var(--accent);}
+  .btn-delete{background:none;color:var(--danger);font-size:12px;padding:4px 0;text-decoration:underline;margin-top:8px;}
+  .log-form{display:none;gap:8px;margin-top:10px;padding:12px;background:#F5F8FE;border-radius:12px;flex-direction:column;}
   .log-form.open{display:flex;}
-  .log-form select, .log-form textarea{font-family:'Inter',sans-serif;padding:8px 10px;border:1px solid var(--line);border-radius:6px;font-size:0.85rem;background:#fff;}
-  .empty-state{text-align:center;padding:40px 20px;color:var(--ink-soft);}
+  .log-form select, .log-form textarea{font-family:'Inter',sans-serif;padding:9px 10px;border:1px solid var(--field-border);border-radius:8px;font-size:13px;background:#fff;}
+  .empty-state{text-align:center;padding:48px 20px;color:var(--ink-soft);}
   .empty-state .icon{font-size:2rem;margin-bottom:8px;}
-  .fab{position:fixed;bottom:20px;right:20px;background:var(--gold);color:var(--forest-dark);border:none;border-radius:999px;padding:15px 22px;font-family:'Inter',sans-serif;font-weight:700;font-size:0.9rem;box-shadow:0 4px 14px rgba(0,0,0,0.25);cursor:pointer;z-index:30;}
-  .modal-overlay{display:none;position:fixed;inset:0;background:rgba(21,42,32,0.55);z-index:50;align-items:flex-end;justify-content:center;}
+  .fab{position:absolute;bottom:22px;right:22px;background:var(--gradient);color:#fff;border:none;border-radius:999px;padding:14px 22px;font-family:'Inter',sans-serif;font-weight:700;font-size:13px;box-shadow:0 10px 24px rgba(37,99,235,0.4);cursor:pointer;z-index:30;}
+  .modal-overlay{display:none;position:fixed;inset:0;background:rgba(22,35,59,0.5);z-index:50;align-items:flex-end;justify-content:center;}
   .modal-overlay.open{display:flex;}
-  .modal{background:#fff;width:100%;max-width:520px;border-radius:16px 16px 0 0;padding:20px 18px 26px;max-height:88vh;overflow-y:auto;position:relative;}
-  .modal h3{margin:0 0 14px;color:var(--forest-dark);}
+  .modal{background:#fff;width:100%;max-width:520px;border-radius:20px 20px 0 0;padding:22px 20px 28px;max-height:88vh;overflow-y:auto;position:relative;}
+  .modal h3{margin:0 0 16px;font-size:19px;font-weight:800;color:var(--ink);}
   .field{margin-bottom:12px;}
-  .field label{display:block;font-size:0.78rem;font-weight:600;color:var(--ink-soft);margin-bottom:4px;}
-  .field input, .field select, .field textarea{width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;font-family:'Inter',sans-serif;font-size:0.9rem;}
+  .field label{display:block;font-size:12px;font-weight:700;color:var(--ink-soft);margin-bottom:5px;}
+  .field input, .field select, .field textarea{width:100%;padding:11px;border:1px solid var(--field-border);border-radius:10px;font-family:'Inter',sans-serif;font-size:14px;}
   .field textarea{resize:vertical;min-height:60px;}
   .modal-actions{display:flex;gap:10px;margin-top:16px;}
-  .modal-actions .btn{flex:1;}
-  .close-x{position:absolute;top:14px;right:18px;background:none;border:none;font-size:1.3rem;color:var(--ink-soft);cursor:pointer;}
+  .modal-actions .btn{flex:1;padding:12px;}
+  .close-x{position:absolute;top:16px;right:20px;background:none;border:none;font-size:20px;color:var(--ink-muted);cursor:pointer;}
   .status-banner{padding:10px 18px;font-size:0.8rem;text-align:center;}
-  .status-banner.error{background:#F5DADA;color:var(--danger);}
+  .status-banner.error{background:#FBE1DD;color:var(--danger);}
 </style>
 </head>
 <body>
 
+<div class="app-shell">
+
 <header>
-  <h1 class="serif">Zach's Plant Ledger</h1>
+  <h1>Toni's Plant Ledger</h1>
   <p id="total-count">Loading...</p>
+  <div class="self-hosted-badge">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="4.5" rx="1.5" fill="white"/><rect x="3" y="10" width="18" height="4.5" rx="1.5" fill="white" opacity="0.75"/><rect x="3" y="16" width="18" height="4.5" rx="1.5" fill="white" opacity="0.5"/></svg>
+    <span>Self-hosted · Docker</span>
+  </div>
 </header>
 
 <div id="status-banner"></div>
 
 <div class="search-bar">
-  <input type="text" id="search" placeholder="Search a plant name — check before you buy...">
-  <div class="search-count" id="search-count"></div>
+  <input type="text" id="search" placeholder="Search a plant name — check before you buy…">
 </div>
+<div class="search-count" id="search-count"></div>
 
 <div class="filters" id="filters"></div>
 
@@ -120,7 +139,7 @@
 <div class="modal-overlay" id="modal-overlay">
   <div class="modal">
     <button class="close-x" id="close-modal">&times;</button>
-    <h3 class="serif">Add a Plant</h3>
+    <h3>Add a Plant</h3>
     <div class="field"><label>Name</label><input type="text" id="new-name"></div>
     <div class="field">
       <label>Room</label>
@@ -151,6 +170,8 @@
   </div>
 </div>
 
+</div>
+
 <script>
 const API = '/api';
 let plants = [];
@@ -161,6 +182,9 @@ let openLogFormId = null;
 const groupLabels = {'group-1':'Bright + moist','group-2':'Bright-medium, dry','group-3':'Bright, dry-tolerant','special':'Special care','unsure':'Unsorted'};
 const zoneSuggestions = {'group-1':'Bright + Moist zone (Group 1 shelf)','group-2':'Bright-Medium, Dry zone (Group 2 shelf)','group-3':'Bright, Dry-Tolerant zone (Group 3 shelf)','special':'Its own dedicated spot — special care','unsure':''};
 const knownRooms = ['Office','Living Room','Plant Room','Outside','Other'];
+
+const leafIconSmall = '<svg width="18" height="18" viewBox="0 0 100 100" fill="none"><path d="M58 76 C26 76 14 40 22 10 C58 10 84 36 80 66 C80 72 68 76 58 76 Z" fill="currentColor"/></svg>';
+const leafIconLarge = leafIconSmall.replace('width="18" height="18"', 'width="28" height="28"');
 
 function showBanner(msg, isError){
   const el = document.getElementById('status-banner');
@@ -215,7 +239,7 @@ function renderList(){
 
   const listEl = document.getElementById('plant-list');
   if(filtered.length === 0){
-    listEl.innerHTML = `<div class="empty-state"><div class="icon">🌱</div><div>${query ? 'Nothing matching "'+escapeHtml(query)+'".' : 'No plants in this view.'}</div>${query ? `<button class="btn btn-primary" id="quick-add-btn" style="margin-top:14px;">+ Add "${escapeHtml(query)}"</button>` : ''}</div>`;
+    listEl.innerHTML = `<div class="empty-state"><div class="icon">🌱</div><div>${query ? 'Nothing matching "'+escapeHtml(query)+'".' : 'No plants in this view.'}</div>${query ? `<button class="btn btn-primary" id="quick-add-btn" style="margin-top:14px;border-radius:999px;">+ Add "${escapeHtml(query)}"</button>` : ''}</div>`;
     const qb = document.getElementById('quick-add-btn');
     if(qb) qb.onclick = ()=>openModal(query);
     return;
@@ -226,7 +250,7 @@ function renderList(){
 
   listEl.innerHTML = roomOrder.map(room=>{
     const roomPlants = filtered.filter(p=>p.room===room);
-    return `<div class="room-heading"><h2 class="serif">${escapeHtml(room)}</h2><span>${roomPlants.length}</span></div>${roomPlants.map(renderCard).join('')}`;
+    return `<div class="room-heading"><h2>${escapeHtml(room)}</h2><span>${roomPlants.length}</span></div>${roomPlants.map(renderCard).join('')}`;
   }).join('');
 
   wireCardEvents(listEl);
@@ -242,7 +266,7 @@ function renderCard(p){
 
   const logHtml = (!p.log || p.log.length === 0)
     ? `<div class="empty-log">No soil or fertilizer entries logged yet.</div>`
-    : `<div class="log-list">${p.log.map(l=>`<div class="log-entry"><span class="log-date">${l.date}</span><span class="log-type ${l.type}">${l.type}</span><span>${escapeHtml(l.note||'')}</span></div>`).join('')}</div>`;
+    : `<div class="log-list">${p.log.map(l=>`<div class="log-entry"><span class="log-date">${l.date}</span><span class="log-type">${l.type}</span><span>${escapeHtml(l.note||'')}</span></div>`).join('')}</div>`;
 
   const suggestion = zoneSuggestions[p.group] || '';
   const current = p.newLocation || '';
@@ -260,21 +284,22 @@ function renderCard(p){
   return `
     <div class="plant-card ${isOpen?'open':''}">
       <div class="plant-head" data-id="${p.id}">
-        <div class="plant-head-main">
-          ${p.photoUrl ? `<img class="thumb" src="${p.photoUrl}" alt="">` : ''}
-          <div>
-            <div class="plant-name">${escapeHtml(p.name)}</div>
-            <div class="badge-row">${groupBadge}${statusBadge}${propBadge}</div>
-            ${moveBadge}
-          </div>
+        ${p.photos && p.photos[0] ? `<img class="thumb" src="${p.photos[0].url}" alt="">` : `<div class="thumb-placeholder">${leafIconSmall}</div>`}
+        <div class="plant-head-info">
+          <div class="plant-name">${escapeHtml(p.name)}</div>
+          <div class="badge-row">${groupBadge}${statusBadge}${propBadge}</div>
+          ${moveBadge}
         </div>
-        <div class="chevron">&#9656;</div>
+        <div class="chevron">&#8250;</div>
       </div>
       <div class="plant-body">
-        ${p.photoUrl ? `<img class="plant-photo" src="${p.photoUrl}?t=${Date.now()}" alt="${escapeHtml(p.name)}">` : ''}
+        ${p.photos && p.photos.length ? `<div class="photo-gallery">${p.photos.map(ph=>`
+          <div class="gallery-photo-wrap">
+            <img class="gallery-photo" src="${ph.url}?t=${Date.now()}" alt="${escapeHtml(p.name)}">
+            <button class="gallery-remove" data-id="${p.id}" data-photo-id="${ph.id}" aria-label="Remove photo">&times;</button>
+          </div>`).join('')}</div>` : `<div class="plant-photo-placeholder">${leafIconLarge}</div>`}
         <div class="photo-upload-row">
-          <label class="photo-upload-label">${p.photoUrl ? 'Replace photo' : '+ Add photo'}<input type="file" accept="image/*" class="photo-input" data-id="${p.id}"></label>
-          ${p.photoUrl ? `<button class="photo-remove" data-id="${p.id}">Remove</button>` : ''}
+          <label class="photo-upload-label">+ Add photo${p.photos && p.photos.length ? '(s)' : ''}<input type="file" accept="image/*" multiple class="photo-input" data-id="${p.id}"></label>
         </div>
         ${p.notes ? `<div class="notes">${escapeHtml(p.notes)}</div>` : ''}
         <div class="location-field">
@@ -284,12 +309,13 @@ function renderCard(p){
           ${p.newLocation ? `<button class="btn btn-secondary confirm-move" data-id="${p.id}" style="margin-top:6px;width:100%;">&#10003; Confirm — it's now in "${escapeHtml(p.newLocation)}"</button>` : ''}
         </div>
         ${logHtml}
-        <button class="btn btn-log" data-id="${p.id}">${isLogOpen ? 'Cancel' : '+ Log soil / fertilizer / repot'}</button>
+        ${isLogOpen ? '' : `<button class="btn btn-log" data-id="${p.id}">+ Log soil / fertilizer / repot</button>`}
         <div class="log-form ${isLogOpen?'open':''}">
           <select id="log-type-${p.id}"><option>Soil</option><option>Fertilizer</option><option>Repot</option><option>Other</option></select>
           <textarea id="log-note-${p.id}" placeholder="Optional note"></textarea>
           <button class="btn btn-primary save-log" data-id="${p.id}">Save entry</button>
         </div>
+        ${isLogOpen ? `<button class="btn btn-log cancel-log" data-id="${p.id}" style="background:none;color:var(--ink-soft);">Cancel</button>` : ''}
         <button class="btn-delete btn-delete-plant" data-id="${p.id}">Remove plant</button>
       </div>
     </div>`;
@@ -299,7 +325,7 @@ function wireCardEvents(listEl){
   listEl.querySelectorAll('.plant-head').forEach(head=>{
     head.onclick = ()=>{ const id = head.dataset.id; openCardId = openCardId === id ? null : id; renderList(); };
   });
-  listEl.querySelectorAll('.btn-log').forEach(btn=>{
+  listEl.querySelectorAll('.btn-log, .cancel-log').forEach(btn=>{
     btn.onclick = (e)=>{ e.stopPropagation(); const id = btn.dataset.id; openLogFormId = openLogFormId === id ? null : id; renderList(); };
   });
   listEl.querySelectorAll('.save-log').forEach(btn=>{
@@ -329,24 +355,27 @@ function wireCardEvents(listEl){
     input.onclick = (e)=>e.stopPropagation();
     input.onchange = async (e)=>{
       const id = input.dataset.id;
-      const file = input.files[0];
-      if(!file) return;
-      const fd = new FormData();
-      fd.append('photo', file);
+      const files = Array.from(input.files || []);
+      if(!files.length) return;
       try{
-        await api(`/plants/${id}/photo`, {method:'POST', body: fd});
+        for(const file of files){
+          const fd = new FormData();
+          fd.append('photo', file);
+          await api(`/plants/${id}/photos`, {method:'POST', body: fd});
+        }
         await loadPlants();
         openCardId = id;
         renderList();
-        showBanner('Photo saved.');
+        showBanner(files.length > 1 ? `${files.length} photos saved.` : 'Photo saved.');
       }catch(err){}
     };
   });
-  listEl.querySelectorAll('.photo-remove').forEach(btn=>{
+  listEl.querySelectorAll('.gallery-remove').forEach(btn=>{
     btn.onclick = async (e)=>{
       e.stopPropagation();
       const id = btn.dataset.id;
-      await api(`/plants/${id}/photo`, {method:'DELETE'});
+      const photoId = btn.dataset.photoId;
+      await api(`/plants/${id}/photos/${photoId}`, {method:'DELETE'});
       await loadPlants();
       openCardId = id;
       renderList();
