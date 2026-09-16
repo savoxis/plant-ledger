@@ -13,7 +13,7 @@
   <Category>Tools:</Category>
   <WebUI>http://[IP]:[PORT:3210]/</WebUI>
   <TemplateURL/>
-  <Icon></Icon>
+  <Icon>https://raw.githubusercontent.com/savoxis/plant-ledger/main/public/icon.svg</Icon>
   <ExtraParams/>
   <PostArgs/>
   <CPUset/>
