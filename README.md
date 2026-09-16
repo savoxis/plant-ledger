@@ -235,7 +235,13 @@ home server that nobody is babysitting. Changes made with that in mind:
   smaller attack surface, faster `docker compose up --build` after the
   first one (better layer caching).
 - **Runs as a non-root user** (`app`) instead of root inside the
-  container.
+  container, via `docker-entrypoint.sh` rather than a static `USER`
+  directive: the container starts as root just long enough to `chown`
+  `/data` to `app` on every boot (bind-mounted host directories don't
+  inherit the image's build-time ownership, so this can't be a
+  one-time build step), then drops to `app` for the actual Node
+  process with `su-exec`. Self-heals regardless of what owns
+  `/mnt/user/appdata/plant-ledger` on the host.
 - **`HEALTHCHECK` added**, hitting `/api/health` every 30s. Docker will
   now report and can act on a hung-but-still-running process, not just
   a crashed one. `restart: unless-stopped` was already correct for
