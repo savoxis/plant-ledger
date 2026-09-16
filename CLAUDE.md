@@ -110,6 +110,14 @@ pre-process images before sending.
 | POST | `/api/plants/:id/photos` | multipart, field name `photo` | adds one photo; call once per file for multiple |
 | DELETE | `/api/plants/:id/photos/:photoId` | — | removes one specific photo by its numeric id (from the `photos` array) |
 | GET | `/api/export` | — | full JSON snapshot, useful if she asks "what do I have" in bulk |
+| GET | `/api/claude-snapshot` | — | everything `/api/plants` has, plus every photo embedded as a base64 data URI in one response. Use this specifically when you need to actually *see* her plants (identifying something from a photo, checking on a plant's visible condition) — it's heavier, so don't use it for plain text questions `/api/plants` already answers. |
+| POST | `/api/plants/bulk-update` | `{ids: [...], changes: {...same fields as PUT...}}` | applies the same partial update to every id; returns `{updated, notFound}`. Resolve names to ids via `/api/plants` first — never fuzzy-match names server-side or here. |
+| POST | `/api/plants/bulk-logs` | `{ids: [...], type, note}` | adds the same log entry to every id; returns `{updated, notFound}` |
+| POST | `/api/plants/confirm-moves` | `{ids: [...]}` (optional) | applies every listed plant's pending `newLocation` as its actual `room` and logs the move — same as the UI's "Confirm move" button, just for many at once. Omit `ids` to apply to every plant that currently has a pending move. |
+
+There's deliberately no bulk delete. Removing a plant is one call per
+plant, always — a single bad bulk-delete request is exactly the kind
+of mistake that shouldn't be possible to make in one shot.
 
 ### Example: add a plant from a casual description
 
