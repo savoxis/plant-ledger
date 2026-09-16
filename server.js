@@ -81,6 +81,35 @@ if (existingCount === 0) {
 }
 
 const app = express();
+
+// Single shared-password lock. This is a backstop, not the primary
+// control -- the real access boundary is the NPM Access List in front
+// of this container. Exempts /api/health so Docker's own HEALTHCHECK
+// (which sends no credentials) keeps working.
+const AUTH_PASSWORD = process.env.AUTH_PASSWORD || '';
+if (!AUTH_PASSWORD) {
+  console.warn('AUTH_PASSWORD not set -- app-level lock is DISABLED. Set AUTH_PASSWORD to enable it.');
+} else {
+  app.use((req, res, next) => {
+    if (req.path === '/api/health') return next();
+    const header = req.headers.authorization || '';
+    const [scheme, encoded] = header.split(' ');
+    let suppliedPassword = '';
+    if (scheme === 'Basic' && encoded) {
+      const decoded = Buffer.from(encoded, 'base64').toString('utf8');
+      suppliedPassword = decoded.slice(decoded.indexOf(':') + 1);
+    }
+    const supplied = Buffer.from(suppliedPassword);
+    const expected = Buffer.from(AUTH_PASSWORD);
+    const match = supplied.length === expected.length && crypto.timingSafeEqual(supplied, expected);
+    if (!match) {
+      res.set('WWW-Authenticate', 'Basic realm="Plant Ledger"');
+      return res.status(401).send('Authentication required');
+    }
+    next();
+  });
+}
+
 app.use(express.json({ limit: '2mb' }));
 app.use('/photos', express.static(PHOTOS_DIR, { maxAge: '30d' }));
 app.use(express.static(path.join(__dirname, 'public')));
@@ -214,4 +243,24 @@ app.get('/api/export', (req, res) => {
   res.json(rows);
 });
 
-app.listen(PORT, () => console.log(`Plant Ledger listening on port ${PORT}`));
+const server = app.listen(PORT, () => console.log(`Plant Ledger listening on port ${PORT}`));
+
+function shutdown(signal) {
+  console.log(`${signal} received, shutting down`);
+  server.close(() => {
+    db.close();
+    process.exit(0);
+  });
+  // Force-exit if connections don't drain in time (e.g. a stuck upload).
+  setTimeout(() => process.exit(1), 10_000).unref();
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught exception:', err);
+  process.exit(1);
+});
+process.on('unhandledRejection', (err) => {
+  console.error('Unhandled rejection:', err);
+  process.exit(1);
+});
