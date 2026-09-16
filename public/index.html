@@ -104,6 +104,17 @@
   .close-x{position:absolute;top:16px;right:20px;background:none;border:none;font-size:20px;color:var(--ink-muted);cursor:pointer;}
   .status-banner{padding:10px 18px;font-size:0.8rem;text-align:center;}
   .status-banner.error{background:#FBE1DD;color:var(--danger);}
+
+  @media (min-width: 820px) {
+    .app-shell{max-width:900px;}
+    main{display:grid;grid-template-columns:repeat(2, 1fr);gap:10px;align-items:start;}
+    main .room-heading{grid-column:1 / -1;}
+    main .plant-card{margin-bottom:0;}
+  }
+  @media (min-width: 1200px) {
+    .app-shell{max-width:1200px;}
+    main{grid-template-columns:repeat(3, 1fr);}
+  }
 </style>
 </head>
 <body>
