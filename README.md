@@ -58,6 +58,50 @@ On first boot with an empty database, it seeds itself from
 `seed-data.json`. Delete that file (or ignore it) if you don't want the
 starter data.
 
+### Deploying on Unraid via GHCR (recommended for Unraid)
+
+Every push to `main` builds and publishes a container image via GitHub
+Actions (`.github/workflows/docker-publish.yml`) to:
+
+```
+ghcr.io/savoxis/plant-ledger:latest
+```
+
+(also tagged with the commit SHA, if you ever need to pin an older
+build). Built for `linux/amd64` only — that's what a normal Unraid box
+runs; shout if you're on ARM and this needs a second platform added.
+
+**One-time setup after the first Actions run:**
+
+1. On GitHub: **your profile -> Packages -> plant-ledger -> Package
+   settings -> Change visibility -> Public.** GHCR images pushed via
+   `GITHUB_TOKEN` default to private, and a private package needs
+   registry credentials configured in Unraid (Settings -> Docker ->
+   private registry) to pull at all. There's nothing secret baked into
+   the image (no `AUTH_PASSWORD`, no data — those come from the
+   volume/env at runtime), so making it public is the simpler path
+   unless you specifically want it private.
+2. In Unraid: **Docker tab -> Add Container -> Template**, paste:
+   ```
+   https://raw.githubusercontent.com/savoxis/plant-ledger/main/unraid-template.xml
+   ```
+   This pre-fills repository, port (3210 -> 3000), the `/data` volume
+   path, and an `AUTH_PASSWORD` field (masked in the UI). I haven't run
+   this template against a live Unraid instance — double-check the
+   fields it fills in before hitting Apply, particularly the `/data`
+   host path if your appdata share isn't the default
+   `/mnt/user/appdata/plant-ledger`.
+3. Apply. From then on, Unraid's Docker tab shows the normal "update
+   available" badge whenever a new push to `main` publishes a new
+   `latest` digest — update the same way you update any other
+   container.
+
+If you'd rather not stand up a registry/CI dependency at all, the
+alternative is the **Docker Compose Manager** Unraid plugin pointed
+directly at this repo (it `git pull`s and rebuilds on the box itself
+instead of pulling a prebuilt image) — ask if you want that path
+documented instead or in addition.
+
 ## API
 
 | Method | Path                    | Purpose                          |
