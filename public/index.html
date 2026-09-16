@@ -173,6 +173,7 @@
       <select id="new-status"><option value="confirmed">Confirmed</option><option value="tentative">Tentative</option><option value="unconfirmed">Unconfirmed</option></select>
     </div>
     <div class="field"><label>Notes (optional)</label><textarea id="new-notes"></textarea></div>
+    <div class="field"><label>Price paid (optional)</label><input type="number" step="0.01" min="0" id="new-price" placeholder="Leave blank if unknown, 0 if free"></div>
     <div class="field"><label><input type="checkbox" id="new-propagating" style="width:auto;margin-right:6px;">Currently propagating (rooting in water)</label></div>
     <div class="modal-actions">
       <button class="btn btn-secondary" id="cancel-add">Cancel</button>
@@ -313,6 +314,10 @@ function renderCard(p){
           <label class="photo-upload-label">+ Add photo${p.photos && p.photos.length ? '(s)' : ''}<input type="file" accept="image/*" multiple class="photo-input" data-id="${p.id}"></label>
         </div>
         ${p.notes ? `<div class="notes">${escapeHtml(p.notes)}</div>` : ''}
+        <div class="field">
+          <label>Price paid</label>
+          <input type="number" step="0.01" min="0" class="price-input" data-id="${p.id}" value="${p.pricePaid !== null && p.pricePaid !== undefined ? p.pricePaid : ''}" placeholder="Leave blank if unknown, 0 if free">
+        </div>
         <div class="location-field">
           <label>Planned new spot (once regrouped)</label>
           <select class="loc-select" data-id="${p.id}">${optionsHtml}</select>
@@ -418,6 +423,16 @@ function wireCardEvents(listEl){
       renderList();
     };
   });
+  listEl.querySelectorAll('.price-input').forEach(input=>{
+    input.onclick = (e)=>e.stopPropagation();
+    input.onchange = async ()=>{
+      const id = input.dataset.id;
+      await api(`/plants/${id}`, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({pricePaid: input.value === '' ? null : Number(input.value)})});
+      await loadPlants();
+      openCardId = id;
+      renderList();
+    };
+  });
   listEl.querySelectorAll('.confirm-move').forEach(btn=>{
     btn.onclick = async (e)=>{
       e.stopPropagation();
@@ -441,6 +456,7 @@ function openModal(prefillName){
   document.getElementById('new-group').value = 'unsure';
   document.getElementById('new-status').value = 'confirmed';
   document.getElementById('new-notes').value = '';
+  document.getElementById('new-price').value = '';
   document.getElementById('new-propagating').checked = false;
   overlay.classList.add('open');
 }
@@ -459,6 +475,7 @@ document.getElementById('save-new').onclick = async ()=>{
     group: document.getElementById('new-group').value,
     status: document.getElementById('new-status').value,
     notes: document.getElementById('new-notes').value.trim(),
+    pricePaid: document.getElementById('new-price').value === '' ? null : Number(document.getElementById('new-price').value),
     propagating: document.getElementById('new-propagating').checked
   })});
   await loadPlants();

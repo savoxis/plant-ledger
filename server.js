@@ -60,6 +60,16 @@ db.exec(`
   AND id NOT IN (SELECT plant_id FROM photos)
 `);
 
+// One-time, idempotent migration: add price_paid if this DB predates
+// it. NULL means "not recorded" -- distinct from 0, which means "got
+// it free/traded/gifted". ALTER TABLE ADD COLUMN is itself additive
+// and safe against live data; the existence check just keeps re-runs
+// from erroring on a column that's already there.
+const plantsCols = db.prepare("PRAGMA table_info(plants)").all().map((c) => c.name);
+if (!plantsCols.includes('price_paid')) {
+  db.exec('ALTER TABLE plants ADD COLUMN price_paid REAL');
+}
+
 // One-time seed on first boot (empty DB only) -- decodes any embedded
 // base64 photos from seed-data.json into real files under PHOTOS_DIR.
 const existingCount = db.prepare('SELECT COUNT(*) AS c FROM plants').get().c;
@@ -68,8 +78,8 @@ if (existingCount === 0) {
   if (fs.existsSync(seedPath)) {
     const seed = JSON.parse(fs.readFileSync(seedPath, 'utf8'));
     const insertPlant = db.prepare(`
-      INSERT INTO plants (id, name, room, group_name, status, notes, propagating, new_location)
-      VALUES (@id, @name, @room, @group_name, @status, @notes, @propagating, @new_location)
+      INSERT INTO plants (id, name, room, group_name, status, notes, propagating, new_location, price_paid)
+      VALUES (@id, @name, @room, @group_name, @status, @notes, @propagating, @new_location, @price_paid)
     `);
     const insertLog = db.prepare(
       'INSERT INTO logs (plant_id, date, type, note) VALUES (?, ?, ?, ?)'
@@ -88,6 +98,7 @@ if (existingCount === 0) {
           notes: p.notes || '',
           propagating: p.propagating ? 1 : 0,
           new_location: p.newLocation || '',
+          price_paid: p.pricePaid ?? null,
         });
         if (p.photo && p.photo.startsWith('data:image')) {
           const b64 = p.photo.split(',')[1];
@@ -174,6 +185,19 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
 
+// Coerces an incoming pricePaid value to either a finite number or
+// null. Empty string / undefined / null all mean "not recorded" (not
+// the same as 0, which means "free"). Anything non-numeric is
+// rejected rather than silently dropped, so a bad request tells you
+// why instead of quietly saving NULL.
+function normalizePrice(value) {
+  if (value === undefined) return undefined; // caller decides whether to touch the column at all
+  if (value === null || value === '') return null;
+  const n = Number(value);
+  if (!Number.isFinite(n)) throw new Error('pricePaid must be a number, null, or omitted');
+  return n;
+}
+
 function rowToPlant(row) {
   const logs = db
     .prepare('SELECT date, type, note FROM logs WHERE plant_id = ? ORDER BY id DESC')
@@ -191,6 +215,7 @@ function rowToPlant(row) {
     notes: row.notes,
     propagating: !!row.propagating,
     newLocation: row.new_location || '',
+    pricePaid: row.price_paid,
     photos,
     log: logs,
   };
@@ -204,13 +229,19 @@ app.get('/api/plants', (req, res) => {
 });
 
 app.post('/api/plants', (req, res) => {
-  const { name, room, group, status, notes, propagating, newLocation } = req.body;
+  const { name, room, group, status, notes, propagating, newLocation, pricePaid } = req.body;
   if (!name || !room) return res.status(400).json({ error: 'name and room are required' });
+  let price;
+  try {
+    price = normalizePrice(pricePaid);
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
+  }
   const id = 'p' + crypto.randomBytes(6).toString('hex');
   db.prepare(`
-    INSERT INTO plants (id, name, room, group_name, status, notes, propagating, new_location)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(id, name, room, group || 'unsure', status || 'confirmed', notes || '', propagating ? 1 : 0, newLocation || '');
+    INSERT INTO plants (id, name, room, group_name, status, notes, propagating, new_location, price_paid)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(id, name, room, group || 'unsure', status || 'confirmed', notes || '', propagating ? 1 : 0, newLocation || '', price ?? null);
   res.json(rowToPlant(db.prepare('SELECT * FROM plants WHERE id = ?').get(id)));
 });
 
@@ -218,8 +249,14 @@ app.put('/api/plants/:id', (req, res) => {
   const existing = db.prepare('SELECT * FROM plants WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'not found' });
   const b = req.body;
+  let price;
+  try {
+    price = normalizePrice(b.pricePaid);
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
+  }
   db.prepare(`
-    UPDATE plants SET name=?, room=?, group_name=?, status=?, notes=?, propagating=?, new_location=?
+    UPDATE plants SET name=?, room=?, group_name=?, status=?, notes=?, propagating=?, new_location=?, price_paid=?
     WHERE id=?
   `).run(
     b.name ?? existing.name,
@@ -229,6 +266,7 @@ app.put('/api/plants/:id', (req, res) => {
     b.notes ?? existing.notes,
     b.propagating !== undefined ? (b.propagating ? 1 : 0) : existing.propagating,
     b.newLocation !== undefined ? b.newLocation : existing.new_location,
+    price !== undefined ? price : existing.price_paid,
     req.params.id
   );
   res.json(rowToPlant(db.prepare('SELECT * FROM plants WHERE id = ?').get(req.params.id)));
@@ -264,12 +302,18 @@ app.post('/api/plants/:id/logs', (req, res) => {
 // plant stays one call per plant so a single bad request can't wipe out
 // several at once. Callers are expected to resolve names to ids via
 // GET /api/plants first; these never do fuzzy name matching themselves.
-const BULK_UPDATE_FIELDS = ['name', 'room', 'group', 'status', 'notes', 'propagating', 'newLocation'];
+const BULK_UPDATE_FIELDS = ['name', 'room', 'group', 'status', 'notes', 'propagating', 'newLocation', 'pricePaid'];
 
 app.post('/api/plants/bulk-update', (req, res) => {
   const { ids, changes } = req.body;
   if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ error: 'ids must be a non-empty array' });
   if (!changes || typeof changes !== 'object') return res.status(400).json({ error: 'changes object is required' });
+  let bulkPrice;
+  try {
+    bulkPrice = normalizePrice(changes.pricePaid);
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
+  }
 
   const updated = [];
   const notFound = [];
@@ -277,7 +321,7 @@ app.post('/api/plants/bulk-update', (req, res) => {
     const existing = db.prepare('SELECT * FROM plants WHERE id = ?').get(id);
     if (!existing) { notFound.push(id); return; }
     db.prepare(`
-      UPDATE plants SET name=?, room=?, group_name=?, status=?, notes=?, propagating=?, new_location=?
+      UPDATE plants SET name=?, room=?, group_name=?, status=?, notes=?, propagating=?, new_location=?, price_paid=?
       WHERE id=?
     `).run(
       changes.name ?? existing.name,
@@ -287,6 +331,7 @@ app.post('/api/plants/bulk-update', (req, res) => {
       changes.notes ?? existing.notes,
       changes.propagating !== undefined ? (changes.propagating ? 1 : 0) : existing.propagating,
       changes.newLocation !== undefined ? changes.newLocation : existing.new_location,
+      bulkPrice !== undefined ? bulkPrice : existing.price_paid,
       id
     );
     updated.push(rowToPlant(db.prepare('SELECT * FROM plants WHERE id = ?').get(id)));
