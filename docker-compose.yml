@@ -1,0 +1,11 @@
+services:
+  plant-ledger:
+    build: .
+    container_name: plant-ledger
+    restart: unless-stopped
+    ports:
+      - "3210:3000"
+    volumes:
+      - /mnt/user/appdata/plant-ledger:/data
+    environment:
+      - PORT=3000
