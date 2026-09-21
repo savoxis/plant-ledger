@@ -88,6 +88,14 @@
   .log-form{display:none;gap:8px;margin-top:10px;padding:12px;background:#F5F8FE;border-radius:12px;flex-direction:column;}
   .log-form.open{display:flex;}
   .log-form select, .log-form textarea{font-family:'Inter',sans-serif;padding:9px 10px;border:1px solid var(--field-border);border-radius:8px;font-size:13px;background:#fff;}
+  .btn-edit-toggle{background:var(--accent-bg-soft);color:var(--accent);width:100%;margin-bottom:10px;}
+  .edit-form{display:none;flex-direction:column;gap:10px;margin-top:10px;padding:12px;background:#F5F8FE;border-radius:12px;}
+  .edit-form.open{display:flex;}
+  .edit-form .field{margin-bottom:0;}
+  .edit-form .field input, .edit-form .field select, .edit-form .field textarea{width:100%;padding:9px 10px;border:1px solid var(--field-border);border-radius:8px;font-family:'Inter',sans-serif;font-size:13px;background:#fff;box-sizing:border-box;}
+  .edit-form .field textarea{resize:vertical;min-height:56px;}
+  .edit-form-actions{display:flex;gap:8px;}
+  .edit-form-actions .btn{flex:1;padding:9px;}
   .empty-state{text-align:center;padding:48px 20px;color:var(--ink-soft);}
   .empty-state .icon{font-size:2rem;margin-bottom:8px;}
   .fab{position:absolute;bottom:22px;right:22px;background:var(--gradient);color:#fff;border:none;border-radius:999px;padding:14px 22px;font-family:'Inter',sans-serif;font-weight:700;font-size:13px;box-shadow:0 10px 24px rgba(37,99,235,0.4);cursor:pointer;z-index:30;}
@@ -190,6 +198,7 @@ let plants = [];
 let activeFilter = 'all';
 let openCardId = null;
 let openLogFormId = null;
+let openEditId = null;
 
 const groupLabels = {'group-1':'Bright + moist','group-2':'Bright-medium, dry','group-3':'Bright, dry-tolerant','special':'Special care','unsure':'Unsorted'};
 const zoneSuggestions = {'group-1':'Bright + Moist zone (Group 1 shelf)','group-2':'Bright-Medium, Dry zone (Group 2 shelf)','group-3':'Bright, Dry-Tolerant zone (Group 3 shelf)','special':'Its own dedicated spot — special care','unsure':''};
@@ -271,6 +280,7 @@ function renderList(){
 function renderCard(p){
   const isOpen = openCardId === p.id;
   const isLogOpen = openLogFormId === p.id;
+  const isEditOpen = openEditId === p.id;
   const groupBadge = p.group === 'unsure' ? '' : `<span class="badge ${p.group && p.group.startsWith('group')?p.group:'group-special'}">${groupLabels[p.group]||''}</span>`;
   const statusBadge = p.status !== 'confirmed' ? `<span class="badge status-${p.status}">${p.status}</span>` : '';
   const propBadge = p.propagating ? `<span class="badge propagating">propagating</span>` : '';
@@ -293,6 +303,10 @@ function renderCard(p){
   });
   optionsHtml += `<option value="__custom__" ${isCustom?'selected':''}>Custom / type my own...</option>`;
 
+  const editRoomOptions = [...knownRooms];
+  if(p.room && !editRoomOptions.includes(p.room)) editRoomOptions.push(p.room);
+  const editRoomHtml = editRoomOptions.map(r=>`<option value="${escapeHtml(r)}" ${p.room===r?'selected':''}>${escapeHtml(r)}</option>`).join('');
+
   return `
     <div class="plant-card ${isOpen?'open':''}">
       <div class="plant-head" data-id="${p.id}">
@@ -305,6 +319,38 @@ function renderCard(p){
         <div class="chevron">&#8250;</div>
       </div>
       <div class="plant-body">
+        ${isEditOpen ? '' : `<button class="btn btn-edit-toggle edit-toggle" data-id="${p.id}">&#9998; Edit plant details</button>`}
+        <div class="edit-form ${isEditOpen?'open':''}">
+          <div class="field"><label>Name</label><input type="text" id="edit-name-${p.id}" value="${escapeHtml(p.name)}"></div>
+          <div class="field">
+            <label>Room</label>
+            <select id="edit-room-${p.id}">${editRoomHtml}</select>
+          </div>
+          <div class="field">
+            <label>Care group</label>
+            <select id="edit-group-${p.id}">
+              <option value="group-1" ${p.group==='group-1'?'selected':''}>Bright indirect + consistent moisture</option>
+              <option value="group-2" ${p.group==='group-2'?'selected':''}>Bright-medium, dry between</option>
+              <option value="group-3" ${p.group==='group-3'?'selected':''}>Bright light, dry-between (drought-tolerant)</option>
+              <option value="special" ${p.group==='special'?'selected':''}>Special care (own category)</option>
+              <option value="unsure" ${(!p.group||p.group==='unsure')?'selected':''}>Not sure yet</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>ID status</label>
+            <select id="edit-status-${p.id}">
+              <option value="confirmed" ${p.status==='confirmed'?'selected':''}>Confirmed</option>
+              <option value="tentative" ${p.status==='tentative'?'selected':''}>Tentative</option>
+              <option value="unconfirmed" ${p.status==='unconfirmed'?'selected':''}>Unconfirmed</option>
+            </select>
+          </div>
+          <div class="field"><label>Notes</label><textarea id="edit-notes-${p.id}">${escapeHtml(p.notes||'')}</textarea></div>
+          <div class="field"><label><input type="checkbox" id="edit-propagating-${p.id}" style="width:auto;margin-right:6px;" ${p.propagating?'checked':''}>Currently propagating (rooting in water)</label></div>
+          <div class="edit-form-actions">
+            <button class="btn btn-secondary cancel-edit" data-id="${p.id}">Cancel</button>
+            <button class="btn btn-primary save-edit" data-id="${p.id}">Save changes</button>
+          </div>
+        </div>
         ${p.photos && p.photos.length ? `<div class="photo-gallery">${p.photos.map(ph=>`
           <div class="gallery-photo-wrap">
             <img class="gallery-photo" src="${ph.url}?t=${Date.now()}" alt="${escapeHtml(p.name)}">
@@ -343,6 +389,30 @@ function wireCardEvents(listEl){
   });
   listEl.querySelectorAll('.btn-log, .cancel-log').forEach(btn=>{
     btn.onclick = (e)=>{ e.stopPropagation(); const id = btn.dataset.id; openLogFormId = openLogFormId === id ? null : id; renderList(); };
+  });
+  listEl.querySelectorAll('.edit-toggle, .cancel-edit').forEach(btn=>{
+    btn.onclick = (e)=>{ e.stopPropagation(); const id = btn.dataset.id; openEditId = openEditId === id ? null : id; renderList(); };
+  });
+  listEl.querySelectorAll('.save-edit').forEach(btn=>{
+    btn.onclick = async (e)=>{
+      e.stopPropagation();
+      const id = btn.dataset.id;
+      const name = document.getElementById('edit-name-'+id).value.trim();
+      if(!name){ alert('Give it a name first.'); return; }
+      await api(`/plants/${id}`, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({
+        name,
+        room: document.getElementById('edit-room-'+id).value,
+        group: document.getElementById('edit-group-'+id).value,
+        status: document.getElementById('edit-status-'+id).value,
+        notes: document.getElementById('edit-notes-'+id).value.trim(),
+        propagating: document.getElementById('edit-propagating-'+id).checked
+      })});
+      await loadPlants();
+      openEditId = null;
+      openCardId = id;
+      renderList();
+      showBanner('Plant updated.');
+    };
   });
   listEl.querySelectorAll('.save-log').forEach(btn=>{
     btn.onclick = async (e)=>{
