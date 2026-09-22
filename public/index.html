@@ -132,6 +132,7 @@
 <header>
   <h1>Toni's Plant Ledger</h1>
   <p id="total-count">Loading...</p>
+  <p id="spend-summary"></p>
   <div class="self-hosted-badge">
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="4.5" rx="1.5" fill="white"/><rect x="3" y="10" width="18" height="4.5" rx="1.5" fill="white" opacity="0.75"/><rect x="3" y="16" width="18" height="4.5" rx="1.5" fill="white" opacity="0.5"/></svg>
     <span>Self-hosted · Docker</span>
@@ -234,6 +235,10 @@ async function loadPlants(){
 
 async function render(){
   document.getElementById('total-count').textContent = plants.length + ' plants tracked';
+  const totalSpent = plants.reduce((sum, p) => sum + (typeof p.pricePaid === 'number' ? p.pricePaid : 0), 0);
+  const freeCount = plants.filter(p => p.pricePaid === 0).length;
+  document.getElementById('spend-summary').textContent =
+    '$' + totalSpent.toFixed(2) + ' spent so far · ' + freeCount + ' free';
   renderFilters();
   renderList();
 }
@@ -410,7 +415,7 @@ function wireCardEvents(listEl){
       await loadPlants();
       openEditId = null;
       openCardId = id;
-      renderList();
+      render();
       showBanner('Plant updated.');
     };
   });
@@ -423,7 +428,7 @@ function wireCardEvents(listEl){
       await api(`/plants/${id}/logs`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({type, note})});
       await loadPlants();
       openLogFormId = null;
-      renderList();
+      render();
     };
   });
   listEl.querySelectorAll('.btn-delete-plant').forEach(btn=>{
@@ -433,7 +438,7 @@ function wireCardEvents(listEl){
       if(confirm('Remove this plant from the ledger?')){
         await api(`/plants/${id}`, {method:'DELETE'});
         await loadPlants();
-        renderList();
+        render();
       }
     };
   });
@@ -451,7 +456,7 @@ function wireCardEvents(listEl){
         }
         await loadPlants();
         openCardId = id;
-        renderList();
+        render();
         showBanner(files.length > 1 ? `${files.length} photos saved.` : 'Photo saved.');
       }catch(err){}
     };
@@ -464,7 +469,7 @@ function wireCardEvents(listEl){
       await api(`/plants/${id}/photos/${photoId}`, {method:'DELETE'});
       await loadPlants();
       openCardId = id;
-      renderList();
+      render();
     };
   });
   listEl.querySelectorAll('.loc-select').forEach(select=>{
@@ -480,7 +485,7 @@ function wireCardEvents(listEl){
       await api(`/plants/${id}`, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({newLocation: select.value})});
       await loadPlants();
       openCardId = id;
-      renderList();
+      render();
     };
   });
   listEl.querySelectorAll('.loc-input').forEach(input=>{
@@ -490,7 +495,7 @@ function wireCardEvents(listEl){
       await api(`/plants/${id}`, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({newLocation: input.value.trim()})});
       await loadPlants();
       openCardId = id;
-      renderList();
+      render();
     };
   });
   listEl.querySelectorAll('.price-input').forEach(input=>{
@@ -500,7 +505,7 @@ function wireCardEvents(listEl){
       await api(`/plants/${id}`, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({pricePaid: input.value === '' ? null : Number(input.value)})});
       await loadPlants();
       openCardId = id;
-      renderList();
+      render();
     };
   });
   listEl.querySelectorAll('.confirm-move').forEach(btn=>{
@@ -512,7 +517,7 @@ function wireCardEvents(listEl){
       await api(`/plants/${id}/logs`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({type:'Other', note:`Moved to ${plant.newLocation}`})});
       await loadPlants();
       openCardId = id;
-      renderList();
+      render();
     };
   });
 }
