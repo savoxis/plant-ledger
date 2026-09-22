@@ -44,10 +44,20 @@ A plant:
   "notes": "Fenestrating well on the new leaf.",
   "propagating": false,
   "newLocation": "",
+  "pricePaid": 12.5,
   "photos": [{ "id": 7, "url": "/photos/p1a2b3c4d5e6-172...jpg" }],
   "log": [{ "date": "2026-06-02", "type": "Soil", "note": "Repacked with extra perlite" }]
 }
 ```
+
+### `pricePaid` — number or null, not the same thing as zero
+
+`null` means "not recorded" — she never said. `0` means she said it
+explicitly was free (gifted, traded, a cutting). If she mentions a
+price while adding or describing a plant, set it; if she doesn't say,
+leave it `null` — don't assume `0`. The header on the live site shows
+a running total (`$X.XX spent so far`) summed from every `pricePaid`
+that isn't `null`, plus a count of plants where it's exactly `0`.
 
 ### `group` — fixed enum, do not invent new values
 
@@ -103,7 +113,7 @@ pre-process images before sending.
 |---|---|---|---|
 | GET | `/api/health` | — | no auth required |
 | GET | `/api/plants` | — | full list, use this to answer questions about her collection |
-| POST | `/api/plants` | `{name, room, group, status, notes, propagating}` | `name` and `room` required, everything else optional (defaults: `group: "unsure"`, `status: "confirmed"`) |
+| POST | `/api/plants` | `{name, room, group, status, notes, propagating, pricePaid}` | `name` and `room` required, everything else optional (defaults: `group: "unsure"`, `status: "confirmed"`, `pricePaid: null`) |
 | PUT | `/api/plants/:id` | any subset of the same fields | partial update, only send what's changing |
 | DELETE | `/api/plants/:id` | — | **destructive** — confirm with her first |
 | POST | `/api/plants/:id/logs` | `{type, note}` | date is set server-side to today |
