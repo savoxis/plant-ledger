@@ -112,6 +112,17 @@
   .close-x{position:absolute;top:16px;right:20px;background:none;border:none;font-size:20px;color:var(--ink-muted);cursor:pointer;}
   .status-banner{padding:10px 18px;font-size:0.8rem;text-align:center;}
   .status-banner.error{background:#FBE1DD;color:var(--danger);}
+  .lineage-badge{display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--group-special-fg);background:var(--group-special-bg);padding:3px 9px;border-radius:999px;font-weight:700;margin-top:5px;}
+  .potted-note{font-size:11.5px;color:var(--ink-muted);font-style:italic;margin-top:6px;}
+  .price-row{display:flex;gap:8px;align-items:center;}
+  .price-row input[type="number"]{flex:1;}
+  .price-row input[type="number"]:disabled{background:var(--line);color:var(--ink-muted);}
+  .free-check{display:flex;align-items:center;gap:4px;font-size:12px;color:var(--ink-soft);white-space:nowrap;}
+  .history-panel{display:none;flex-direction:column;gap:8px;margin-top:10px;padding:12px;background:#F5F8FE;border-radius:12px;}
+  .history-panel.open{display:flex;}
+  .trash-item{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line);}
+  .trash-item:last-child{border-bottom:none;}
+  .compare-photo{width:100%;border-radius:10px;display:block;}
 
   @media (min-width: 820px) {
     .app-shell{max-width:900px;}
@@ -149,7 +160,9 @@
 <div class="filters" id="filters"></div>
 
 <div class="util-bar">
-  <a class="util-btn" href="/api/export" download>&#8595; Export JSON snapshot</a>
+  <a class="util-btn" href="/api/export" download>&#8595; Export</a>
+  <button class="util-btn" id="open-trash">&#128465; Trash</button>
+  <button class="util-btn" id="open-compare">&#9878; Compare</button>
 </div>
 
 <main id="plant-list"></main>
@@ -182,11 +195,43 @@
       <select id="new-status"><option value="confirmed">Confirmed</option><option value="tentative">Tentative</option><option value="unconfirmed">Unconfirmed</option></select>
     </div>
     <div class="field"><label>Notes (optional)</label><textarea id="new-notes"></textarea></div>
-    <div class="field"><label>Price paid (optional)</label><input type="number" step="0.01" min="0" id="new-price" placeholder="Leave blank if unknown, 0 if free"></div>
+    <div class="field">
+      <label>Price paid (optional)</label>
+      <div class="price-row">
+        <input type="number" step="0.01" min="0" id="new-price" placeholder="Leave blank if unknown">
+        <label class="free-check"><input type="checkbox" id="new-price-free" style="width:auto;">Free</label>
+      </div>
+    </div>
+    <div class="field">
+      <label>Parent plant (optional, if this is a cutting)</label>
+      <select id="new-parent"><option value="">No parent</option></select>
+    </div>
     <div class="field"><label><input type="checkbox" id="new-propagating" style="width:auto;margin-right:6px;">Currently propagating (rooting in water)</label></div>
     <div class="modal-actions">
       <button class="btn btn-secondary" id="cancel-add">Cancel</button>
       <button class="btn btn-primary" id="save-new">Add Plant</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="trash-overlay">
+  <div class="modal">
+    <button class="close-x" id="close-trash">&times;</button>
+    <h3>Trash</h3>
+    <p style="font-size:12.5px;color:var(--ink-soft);margin-top:-8px;">Plants stay here for 30 days before being permanently removed.</p>
+    <div id="trash-list"></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="compare-overlay">
+  <div class="modal">
+    <button class="close-x" id="close-compare">&times;</button>
+    <h3>Compare Photos</h3>
+    <div class="field"><label>Plant A</label><select id="compare-a"></select></div>
+    <div class="field"><label>Plant B</label><select id="compare-b"></select></div>
+    <div style="display:flex;gap:10px;margin-top:10px;">
+      <div style="flex:1;" id="compare-a-photo"></div>
+      <div style="flex:1;" id="compare-b-photo"></div>
     </div>
   </div>
 </div>
@@ -200,6 +245,8 @@ let activeFilter = 'all';
 let openCardId = null;
 let openLogFormId = null;
 let openEditId = null;
+let openHistoryId = null;
+let trashPlants = [];
 
 const groupLabels = {'group-1':'Bright + moist','group-2':'Bright-medium, dry','group-3':'Bright, dry-tolerant','special':'Special care','unsure':'Unsorted'};
 const zoneSuggestions = {'group-1':'Bright + Moist zone (Group 1 shelf)','group-2':'Bright-Medium, Dry zone (Group 2 shelf)','group-3':'Bright, Dry-Tolerant zone (Group 3 shelf)','special':'Its own dedicated spot — special care','unsure':''};
@@ -216,6 +263,8 @@ function showBanner(msg, isError){
 }
 
 async function api(path, opts){
+  opts = opts || {};
+  opts.headers = { ...(opts.headers || {}), 'X-Source': 'ui' };
   try{
     const res = await fetch(API + path, opts);
     if(!res.ok){
@@ -286,10 +335,13 @@ function renderCard(p){
   const isOpen = openCardId === p.id;
   const isLogOpen = openLogFormId === p.id;
   const isEditOpen = openEditId === p.id;
+  const isHistoryOpen = openHistoryId === p.id;
   const groupBadge = p.group === 'unsure' ? '' : `<span class="badge ${p.group && p.group.startsWith('group')?p.group:'group-special'}">${groupLabels[p.group]||''}</span>`;
   const statusBadge = p.status !== 'confirmed' ? `<span class="badge status-${p.status}">${p.status}</span>` : '';
   const propBadge = p.propagating ? `<span class="badge propagating">propagating</span>` : '';
   const moveBadge = p.newLocation ? `<div class="move-badge">&#8594; moving to ${escapeHtml(p.newLocation)}</div>` : '';
+  const lineageBadge = p.parentName ? `<div class="lineage-badge">&#127793; cutting from ${escapeHtml(p.parentName)}</div>` : '';
+  const pottedNote = p.pottedAt ? `<div class="potted-note">Potted up ${escapeHtml(p.pottedAt.slice(0,10))}</div>` : '';
 
   const logHtml = (!p.log || p.log.length === 0)
     ? `<div class="empty-log">No soil or fertilizer entries logged yet.</div>`
@@ -311,6 +363,7 @@ function renderCard(p){
   const editRoomOptions = [...knownRooms];
   if(p.room && !editRoomOptions.includes(p.room)) editRoomOptions.push(p.room);
   const editRoomHtml = editRoomOptions.map(r=>`<option value="${escapeHtml(r)}" ${p.room===r?'selected':''}>${escapeHtml(r)}</option>`).join('');
+  const editParentHtml = `<option value="">No parent</option>` + plants.filter(o=>o.id!==p.id).map(o=>`<option value="${o.id}" ${p.parentId===o.id?'selected':''}>${escapeHtml(o.name)}</option>`).join('');
 
   return `
     <div class="plant-card ${isOpen?'open':''}">
@@ -320,6 +373,7 @@ function renderCard(p){
           <div class="plant-name">${escapeHtml(p.name)}</div>
           <div class="badge-row">${groupBadge}${statusBadge}${propBadge}</div>
           ${moveBadge}
+          ${lineageBadge}
         </div>
         <div class="chevron">&#8250;</div>
       </div>
@@ -350,6 +404,10 @@ function renderCard(p){
             </select>
           </div>
           <div class="field"><label>Notes</label><textarea id="edit-notes-${p.id}">${escapeHtml(p.notes||'')}</textarea></div>
+          <div class="field">
+            <label>Parent plant (if this is a cutting)</label>
+            <select id="edit-parent-${p.id}">${editParentHtml}</select>
+          </div>
           <div class="field"><label><input type="checkbox" id="edit-propagating-${p.id}" style="width:auto;margin-right:6px;" ${p.propagating?'checked':''}>Currently propagating (rooting in water)</label></div>
           <div class="edit-form-actions">
             <button class="btn btn-secondary cancel-edit" data-id="${p.id}">Cancel</button>
@@ -365,9 +423,13 @@ function renderCard(p){
           <label class="photo-upload-label">+ Add photo${p.photos && p.photos.length ? '(s)' : ''}<input type="file" accept="image/*" multiple class="photo-input" data-id="${p.id}"></label>
         </div>
         ${p.notes ? `<div class="notes">${escapeHtml(p.notes)}</div>` : ''}
+        ${pottedNote}
         <div class="field">
           <label>Price paid</label>
-          <input type="number" step="0.01" min="0" class="price-input" data-id="${p.id}" value="${p.pricePaid !== null && p.pricePaid !== undefined ? p.pricePaid : ''}" placeholder="Leave blank if unknown, 0 if free">
+          <div class="price-row">
+            <input type="number" step="0.01" min="0" class="price-input" data-id="${p.id}" value="${p.pricePaid ? p.pricePaid : ''}" placeholder="Leave blank if unknown" ${p.pricePaid === 0 ? 'disabled' : ''}>
+            <label class="free-check"><input type="checkbox" class="price-free" data-id="${p.id}" style="width:auto;" ${p.pricePaid === 0 ? 'checked' : ''}>Free</label>
+          </div>
         </div>
         <div class="location-field">
           <label>Planned new spot (once regrouped)</label>
@@ -383,9 +445,24 @@ function renderCard(p){
           <button class="btn btn-primary save-log" data-id="${p.id}">Save entry</button>
         </div>
         ${isLogOpen ? `<button class="btn btn-log cancel-log" data-id="${p.id}" style="background:none;color:var(--ink-soft);">Cancel</button>` : ''}
-        <button class="btn-delete btn-delete-plant" data-id="${p.id}">Remove plant</button>
+        ${isHistoryOpen ? '' : `<button class="btn btn-log history-toggle" data-id="${p.id}">&#128337; View change history</button>`}
+        <div class="history-panel ${isHistoryOpen?'open':''}">
+          <div id="history-list-${p.id}">Loading…</div>
+          <button class="btn btn-secondary undo-btn" data-id="${p.id}">Undo last change</button>
+          <button class="btn btn-log history-toggle" data-id="${p.id}" style="background:none;color:var(--ink-soft);">Close history</button>
+        </div>
+        <button class="btn-delete btn-delete-plant" data-id="${p.id}">Move to trash</button>
       </div>
     </div>`;
+}
+
+async function loadHistoryInto(id){
+  const entries = await api(`/plants/${id}/audit`);
+  const historyEl = document.getElementById('history-list-'+id);
+  if(!historyEl) return;
+  historyEl.innerHTML = entries.length
+    ? entries.map(en=>`<div class="log-entry"><span class="log-date">${escapeHtml((en.at||'').slice(0,10))}</span><span>${escapeHtml(en.field)}: ${escapeHtml(en.oldValue ?? '—')} &#8594; ${escapeHtml(en.newValue ?? '—')} <em>(${escapeHtml(en.source)})</em></span></div>`).join('')
+    : '<div class="empty-log">No changes recorded yet.</div>';
 }
 
 function wireCardEvents(listEl){
@@ -404,19 +481,20 @@ function wireCardEvents(listEl){
       const id = btn.dataset.id;
       const name = document.getElementById('edit-name-'+id).value.trim();
       if(!name){ alert('Give it a name first.'); return; }
-      await api(`/plants/${id}`, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({
+      const result = await api(`/plants/${id}`, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({
         name,
         room: document.getElementById('edit-room-'+id).value,
         group: document.getElementById('edit-group-'+id).value,
         status: document.getElementById('edit-status-'+id).value,
         notes: document.getElementById('edit-notes-'+id).value.trim(),
+        parentId: document.getElementById('edit-parent-'+id).value || null,
         propagating: document.getElementById('edit-propagating-'+id).checked
       })});
       await loadPlants();
       openEditId = null;
       openCardId = id;
       render();
-      showBanner('Plant updated.');
+      showBanner(result.warning || 'Plant updated.', !!result.warning);
     };
   });
   listEl.querySelectorAll('.save-log').forEach(btn=>{
@@ -435,10 +513,11 @@ function wireCardEvents(listEl){
     btn.onclick = async (e)=>{
       e.stopPropagation();
       const id = btn.dataset.id;
-      if(confirm('Remove this plant from the ledger?')){
+      if(confirm('Move this plant to trash? You can restore it from Trash for 30 days.')){
         await api(`/plants/${id}`, {method:'DELETE'});
         await loadPlants();
         render();
+        showBanner('Moved to trash.');
       }
     };
   });
@@ -508,6 +587,40 @@ function wireCardEvents(listEl){
       render();
     };
   });
+  listEl.querySelectorAll('.price-free').forEach(checkbox=>{
+    checkbox.onclick = (e)=>e.stopPropagation();
+    checkbox.onchange = async ()=>{
+      const id = checkbox.dataset.id;
+      await api(`/plants/${id}`, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({pricePaid: checkbox.checked ? 0 : null})});
+      await loadPlants();
+      openCardId = id;
+      render();
+    };
+  });
+  listEl.querySelectorAll('.history-toggle').forEach(btn=>{
+    btn.onclick = async (e)=>{
+      e.stopPropagation();
+      const id = btn.dataset.id;
+      openHistoryId = openHistoryId === id ? null : id;
+      renderList();
+      if(openHistoryId === id) await loadHistoryInto(id);
+    };
+  });
+  listEl.querySelectorAll('.undo-btn').forEach(btn=>{
+    btn.onclick = async (e)=>{
+      e.stopPropagation();
+      const id = btn.dataset.id;
+      try{
+        const result = await api(`/plants/${id}/undo`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({count:1})});
+        await loadPlants();
+        openCardId = id;
+        openHistoryId = id;
+        render();
+        await loadHistoryInto(id);
+        showBanner('Undid: ' + result.reverted.map(r=>r.field).join(', '));
+      }catch(err){}
+    };
+  });
   listEl.querySelectorAll('.confirm-move').forEach(btn=>{
     btn.onclick = async (e)=>{
       e.stopPropagation();
@@ -532,6 +645,10 @@ function openModal(prefillName){
   document.getElementById('new-status').value = 'confirmed';
   document.getElementById('new-notes').value = '';
   document.getElementById('new-price').value = '';
+  document.getElementById('new-price-free').checked = false;
+  document.getElementById('new-price').disabled = false;
+  document.getElementById('new-parent').innerHTML = '<option value="">No parent</option>' +
+    plants.map(p=>`<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('');
   document.getElementById('new-propagating').checked = false;
   overlay.classList.add('open');
 }
@@ -541,16 +658,24 @@ document.getElementById('close-modal').onclick = closeModal;
 document.getElementById('cancel-add').onclick = closeModal;
 overlay.onclick = (e)=>{ if(e.target === overlay) closeModal(); };
 
+document.getElementById('new-price-free').onchange = (e)=>{
+  document.getElementById('new-price').disabled = e.target.checked;
+  if(e.target.checked) document.getElementById('new-price').value = '';
+};
+
 document.getElementById('save-new').onclick = async ()=>{
   const name = document.getElementById('new-name').value.trim();
   if(!name){ alert('Give it a name first.'); return; }
+  const isFree = document.getElementById('new-price-free').checked;
+  const priceVal = document.getElementById('new-price').value;
   await api('/plants', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({
     name,
     room: document.getElementById('new-room').value,
     group: document.getElementById('new-group').value,
     status: document.getElementById('new-status').value,
     notes: document.getElementById('new-notes').value.trim(),
-    pricePaid: document.getElementById('new-price').value === '' ? null : Number(document.getElementById('new-price').value),
+    pricePaid: isFree ? 0 : (priceVal === '' ? null : Number(priceVal)),
+    parentId: document.getElementById('new-parent').value || null,
     propagating: document.getElementById('new-propagating').checked
   })});
   await loadPlants();
@@ -559,6 +684,70 @@ document.getElementById('save-new').onclick = async ()=>{
   document.getElementById('search').value = '';
   render();
 };
+
+const trashOverlay = document.getElementById('trash-overlay');
+async function openTrash(){
+  trashPlants = await api('/plants/trash');
+  renderTrash();
+  trashOverlay.classList.add('open');
+}
+function renderTrash(){
+  const el = document.getElementById('trash-list');
+  el.innerHTML = trashPlants.length
+    ? trashPlants.map(p=>`
+      <div class="trash-item">
+        <div><strong>${escapeHtml(p.name)}</strong><br><span style="font-size:11px;color:var(--ink-muted);">${escapeHtml(p.room)} &middot; deleted ${escapeHtml((p.deletedAt||'').slice(0,10))}</span></div>
+        <div style="display:flex;gap:6px;">
+          <button class="btn btn-secondary restore-trash" data-id="${p.id}">Restore</button>
+          <button class="btn-delete delete-forever" data-id="${p.id}">Delete forever</button>
+        </div>
+      </div>`).join('')
+    : '<div class="empty-log">Trash is empty.</div>';
+  el.querySelectorAll('.restore-trash').forEach(btn=>{
+    btn.onclick = async ()=>{
+      await api(`/plants/${btn.dataset.id}/restore`, {method:'POST'});
+      await loadPlants();
+      render();
+      await openTrash();
+      showBanner('Restored.');
+    };
+  });
+  el.querySelectorAll('.delete-forever').forEach(btn=>{
+    btn.onclick = async ()=>{
+      if(confirm('Permanently delete this plant and its photos? This cannot be undone.')){
+        await api(`/plants/${btn.dataset.id}/permanent`, {method:'DELETE'});
+        await openTrash();
+      }
+    };
+  });
+}
+document.getElementById('open-trash').onclick = openTrash;
+document.getElementById('close-trash').onclick = ()=>trashOverlay.classList.remove('open');
+trashOverlay.onclick = (e)=>{ if(e.target === trashOverlay) trashOverlay.classList.remove('open'); };
+
+const compareOverlay = document.getElementById('compare-overlay');
+function renderComparePhoto(elId, plantId){
+  const p = plants.find(x=>x.id===plantId);
+  const el = document.getElementById(elId);
+  if(!p){ el.innerHTML = ''; return; }
+  el.innerHTML = p.photos && p.photos[0]
+    ? `<img class="compare-photo" src="${p.photos[0].url}" alt="${escapeHtml(p.name)}">`
+    : `<div class="plant-photo-placeholder">${leafIconLarge}</div>`;
+}
+function openCompare(){
+  const optionsHtml = plants.map(p=>`<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('');
+  document.getElementById('compare-a').innerHTML = optionsHtml;
+  document.getElementById('compare-b').innerHTML = optionsHtml;
+  if(plants.length > 1) document.getElementById('compare-b').selectedIndex = 1;
+  renderComparePhoto('compare-a-photo', document.getElementById('compare-a').value);
+  renderComparePhoto('compare-b-photo', document.getElementById('compare-b').value);
+  compareOverlay.classList.add('open');
+}
+document.getElementById('open-compare').onclick = openCompare;
+document.getElementById('close-compare').onclick = ()=>compareOverlay.classList.remove('open');
+compareOverlay.onclick = (e)=>{ if(e.target === compareOverlay) compareOverlay.classList.remove('open'); };
+document.getElementById('compare-a').onchange = ()=>renderComparePhoto('compare-a-photo', document.getElementById('compare-a').value);
+document.getElementById('compare-b').onchange = ()=>renderComparePhoto('compare-b-photo', document.getElementById('compare-b').value);
 
 (async function init(){
   try{

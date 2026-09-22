@@ -116,7 +116,12 @@ documented instead or in addition.
 | GET    | `/api/plants`            | List all plants + logs           |
 | POST   | `/api/plants`             | Create a plant                   |
 | PUT    | `/api/plants/:id`         | Update a plant                   |
-| DELETE | `/api/plants/:id`         | Delete a plant (+ all its photos) |
+| DELETE | `/api/plants/:id`         | Soft delete (moves to trash, recoverable for 30 days) |
+| POST   | `/api/plants/:id/restore` | Take a plant out of the trash |
+| DELETE | `/api/plants/:id/permanent` | Permanently delete a trashed plant — real, unrecoverable |
+| GET    | `/api/plants/trash`       | List trashed plants |
+| GET    | `/api/plants/:id/audit`   | Field-level change history for one plant |
+| POST   | `/api/plants/:id/undo`    | Revert the most recent field change(s) |
 | POST   | `/api/plants/:id/logs`    | Add a log entry                  |
 | POST   | `/api/plants/:id/photos`  | Add a photo (multipart) — adds, doesn't replace |
 | DELETE | `/api/plants/:id/photos/:photoId` | Remove one specific photo |
@@ -128,6 +133,27 @@ documented instead or in addition.
 
 Each plant supports multiple photos (`photos: [{id, url}, ...]` in the
 API response), ordered by upload order.
+
+### Data integrity: trash, audit trail, undo
+
+- **Deletes are soft** — `DELETE /api/plants/:id` moves a plant to
+  trash rather than removing it. It's excluded from `/api/plants` and
+  everything else, but recoverable via `POST /api/plants/:id/restore`
+  or visible/manageable through the UI's Trash view.
+- **Retention window:** trashed plants are permanently purged (row +
+  photo files deleted) `TRASH_RETENTION_DAYS` after deletion (default
+  30). There's no scheduler in this app, so the purge runs once at
+  container boot — fine for something that gets restarted regularly
+  anyway, and a purge running a day or two late is harmless for a
+  window measured in weeks.
+- **Every field-level change is audited**: who/what changed, old
+  value, new value, when, and whether it came from the web UI or the
+  API (`GET /api/plants/:id/audit`). The web frontend tags its own
+  requests; anything else (curl, an agent) is recorded as `agent`
+  automatically, no extra effort required from the caller.
+- **Undo** (`POST /api/plants/:id/undo`) reverts the most recent field
+  change(s) using that audit trail. It's a simple last-N-changes
+  rollback per plant, not a full multi-level undo stack per field.
 
 No route requires a token, cookie, or header beyond the optional
 `AUTH_PASSWORD` backstop below. Anything that can reach the container

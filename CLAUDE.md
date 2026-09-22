@@ -9,7 +9,10 @@ app itself (though this doc holds for that too).
 Treat her plant data like anything else personal: don't delete or
 overwrite something because it seemed implied. If a request is
 destructive (removing a plant, removing a photo) and there's any
-ambiguity about which one she means, ask rather than guess.
+ambiguity about which one she means, ask rather than guess. Deleting a
+plant is a soft delete (recoverable from Trash for 30 days), but still
+confirm before doing it — "recoverable" isn't the same as "fine to do
+casually."
 
 ## Talking to the app
 
@@ -45,10 +48,35 @@ A plant:
   "propagating": false,
   "newLocation": "",
   "pricePaid": 12.5,
+  "parentId": null,
+  "parentName": null,
+  "pottedAt": null,
+  "deletedAt": null,
   "photos": [{ "id": 7, "url": "/photos/p1a2b3c4d5e6-172...jpg" }],
   "log": [{ "date": "2026-06-02", "type": "Soil", "note": "Repacked with extra perlite" }]
 }
 ```
+
+### `parentId` — lineage, not care group
+
+Don't confuse this with `group`. `group` is light/water needs
+(below). `parentId` links a cutting to the plant it was taken from —
+set it to another plant's `id` when she describes something as split
+or propagated off an existing plant ("took a cutting from the big
+monstera"). `parentName` is resolved server-side for display; don't
+send it back, it's read-only.
+
+### `pottedAt` — set automatically, don't send it yourself
+
+Stamped the moment `propagating` flips from `true` to `false` via any
+update. Read-only from the API's perspective — it's how "propagating
+→ potted up" transitions get a date without anyone having to remember
+to record one.
+
+### `deletedAt` — read-only, means the plant is in the trash
+
+Non-null only for trashed plants (which `/api/plants` excludes
+entirely — see the Trash section below).
 
 ### `pricePaid` — number or null, not the same thing as zero
 
@@ -112,10 +140,15 @@ pre-process images before sending.
 | Method | Path | Body | Notes |
 |---|---|---|---|
 | GET | `/api/health` | — | no auth required |
-| GET | `/api/plants` | — | full list, use this to answer questions about her collection |
-| POST | `/api/plants` | `{name, room, group, status, notes, propagating, pricePaid}` | `name` and `room` required, everything else optional (defaults: `group: "unsure"`, `status: "confirmed"`, `pricePaid: null`) |
-| PUT | `/api/plants/:id` | any subset of the same fields | partial update, only send what's changing |
-| DELETE | `/api/plants/:id` | — | **destructive** — confirm with her first |
+| GET | `/api/plants` | — | full list, use this to answer questions about her collection. Excludes trashed plants. |
+| POST | `/api/plants` | `{name, room, group, status, notes, propagating, pricePaid, parentId}` | `name` and `room` required, everything else optional (defaults: `group: "unsure"`, `status: "confirmed"`, `pricePaid: null`) |
+| PUT | `/api/plants/:id` | any subset of the same fields | partial update, only send what's changing. Response may include a `warning` string (see Data integrity below) — surface it to her, don't just discard it. |
+| DELETE | `/api/plants/:id` | — | soft delete (moves to trash, recoverable for 30 days) — still confirm with her first |
+| POST | `/api/plants/:id/restore` | — | takes a plant out of the trash |
+| DELETE | `/api/plants/:id/permanent` | — | permanently deletes a plant that's already in the trash — **actually destructive, unrecoverable, confirm explicitly.** Fails on a plant that isn't trashed yet (soft-delete it first). |
+| GET | `/api/plants/trash` | — | list of trashed plants |
+| GET | `/api/plants/:id/audit` | — | field-level change history for one plant: `{field, oldValue, newValue, source, at}` per entry, newest first |
+| POST | `/api/plants/:id/undo` | `{count}` (optional, default 1) | reverts the most recent `count` field changes (not deletes — use restore; not photos — add/remove them directly) |
 | POST | `/api/plants/:id/logs` | `{type, note}` | date is set server-side to today |
 | POST | `/api/plants/:id/photos` | multipart, field name `photo` | adds one photo; call once per file for multiple |
 | DELETE | `/api/plants/:id/photos/:photoId` | — | removes one specific photo by its numeric id (from the `photos` array) |
@@ -128,6 +161,23 @@ pre-process images before sending.
 There's deliberately no bulk delete. Removing a plant is one call per
 plant, always — a single bad bulk-delete request is exactly the kind
 of mistake that shouldn't be possible to make in one shot.
+
+### Data integrity: audit trail, source tagging, drift warnings
+
+Every field-level change (create, update, delete, restore, photo
+add/remove) is recorded in an audit log, tagged with where it came
+from. You don't need to do anything to make this happen — every
+request you make through this API is automatically recorded as
+`source: "agent"` (the web UI tags its own requests `"ui"`); there's
+no header for you to set. This is purely a transparency mechanism so
+a human reviewing history can tell what an AI touched.
+
+If a `PUT`/`bulk-update` response includes a `warning` field, it means
+the notes you just saved mention a room name that doesn't match the
+plant's actual `room` field, and you didn't change `room` in the same
+request — a real gap that let entries drift out of sync with reality
+in the past. Don't ignore it: either you meant to update `room` too
+(go do that), or tell her the note and the room field disagree.
 
 ### Example: add a plant from a casual description
 
@@ -166,9 +216,14 @@ curl -s -u anyuser:$AUTH_PASSWORD https://greatestnotion.com/api/plants/p1a2b3c4
 - `README.md` — deployment, Docker, Unraid, backup, and NPM reverse-proxy details.
 - Schema changes: SQLite via `better-sqlite3`, migrations are additive and idempotent in `server.js` (see the `photos` table migration for the pattern) — never a destructive column drop against live data without asking first.
 
-## Not built yet
+## The account-level skill
 
-This file is meant to eventually back a proper packaged Claude Skill
-(`.claude/skills/plant-ledger/`) so Toni can invoke this more
-formally rather than relying on CLAUDE.md auto-loading. Hasn't been
-built — ask if that's wanted before assuming it exists.
+There's an account-level Claude Skill named `plant-ledger` (not part
+of this repo — it lives in the account's skill settings, not
+`.claude/skills/`) that operates the live app on Toni's behalf: it
+knows the base URL, the password, and the same rules in this file. If
+you're improving app behavior described here — new fields, new
+endpoints, changed semantics — the skill likely needs a matching
+update too so it doesn't fall out of sync. Ask whether to update it;
+there's no tool that saves a skill change automatically, it has to be
+repackaged and the person has to click "Save skill" themselves.
