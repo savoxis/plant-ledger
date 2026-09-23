@@ -52,6 +52,7 @@ A plant:
   "parentName": null,
   "pottedAt": null,
   "deletedAt": null,
+  "flagged": false,
   "photos": [{ "id": 7, "url": "/photos/p1a2b3c4d5e6-172...jpg" }],
   "log": [{ "date": "2026-06-02", "type": "Soil", "note": "Repacked with extra perlite" }]
 }
@@ -77,6 +78,18 @@ to record one.
 
 Non-null only for trashed plants (which `/api/plants` excludes
 entirely — see the Trash section below).
+
+### `flagged` — the "gather list" toggle, not a durable fact
+
+Boolean, defaults `false`. It's how the UI's star button works: she
+taps it on a plant while walking through a watering round to mark
+"needs replanting, come back to this one," then opens the Gather List
+view to see everything she starred at once before making one trip to
+gather supplies. Toggle it with a plain `PUT {flagged: true}` (or
+`false`) if she asks you to add or remove something from that list by
+name. It's deliberately excluded from the audit trail and from undo —
+it's ephemeral task state, not a change worth a permanent history
+entry.
 
 ### `pricePaid` — number or null, not the same thing as zero
 
@@ -142,7 +155,7 @@ pre-process images before sending.
 | GET | `/api/health` | — | no auth required |
 | GET | `/api/plants` | — | full list, use this to answer questions about her collection. Excludes trashed plants. |
 | POST | `/api/plants` | `{name, room, group, status, notes, propagating, pricePaid, parentId}` | `name` and `room` required, everything else optional (defaults: `group: "unsure"`, `status: "confirmed"`, `pricePaid: null`) |
-| PUT | `/api/plants/:id` | any subset of the same fields | partial update, only send what's changing. Response may include a `warning` string (see Data integrity below) — surface it to her, don't just discard it. |
+| PUT | `/api/plants/:id` | any subset of the same fields, plus `flagged` (gather-list toggle, PUT-only — can't be set on create) | partial update, only send what's changing. Response may include a `warning` string (see Data integrity below) — surface it to her, don't just discard it. |
 | DELETE | `/api/plants/:id` | — | soft delete (moves to trash, recoverable for 30 days) — still confirm with her first |
 | POST | `/api/plants/:id/restore` | — | takes a plant out of the trash |
 | DELETE | `/api/plants/:id/permanent` | — | permanently deletes a plant that's already in the trash — **actually destructive, unrecoverable, confirm explicitly.** Fails on a plant that isn't trashed yet (soft-delete it first). |
