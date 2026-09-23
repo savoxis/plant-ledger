@@ -123,6 +123,10 @@
   .trash-item{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line);}
   .trash-item:last-child{border-bottom:none;}
   .compare-photo{width:100%;border-radius:10px;display:block;}
+  .flag-toggle{background:none;border:none;font-size:19px;line-height:1;cursor:pointer;padding:0 2px;color:var(--ink-muted);flex-shrink:0;}
+  .flag-toggle.active{color:#D97706;}
+  .gather-item{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line);}
+  .gather-item:last-child{border-bottom:none;}
 
   @media (min-width: 820px) {
     .app-shell{max-width:900px;}
@@ -158,11 +162,13 @@
 <div class="search-count" id="search-count"></div>
 
 <div class="filters" id="filters"></div>
+<div class="filters" id="group-filters"></div>
 
 <div class="util-bar">
   <a class="util-btn" href="/api/export" download>&#8595; Export</a>
   <button class="util-btn" id="open-trash">&#128465; Trash</button>
   <button class="util-btn" id="open-compare">&#9878; Compare</button>
+  <button class="util-btn" id="open-gather">&#127866; Gather</button>
 </div>
 
 <main id="plant-list"></main>
@@ -223,6 +229,16 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="gather-overlay">
+  <div class="modal">
+    <button class="close-x" id="close-gather">&times;</button>
+    <h3>Gather List</h3>
+    <p style="font-size:12.5px;color:var(--ink-soft);margin-top:-8px;">Star a plant while you're going through a watering round, then come back here to see everything at once before you gather them.</p>
+    <div id="gather-list"></div>
+    <button class="btn btn-secondary" id="clear-gather" style="width:100%;margin-top:12px;">Clear list</button>
+  </div>
+</div>
+
 <div class="modal-overlay" id="compare-overlay">
   <div class="modal">
     <button class="close-x" id="close-compare">&times;</button>
@@ -242,6 +258,8 @@
 const API = '/api';
 let plants = [];
 let activeFilter = 'all';
+let activeGroupFilter = 'all';
+let propagatingOnly = false;
 let openCardId = null;
 let openLogFormId = null;
 let openEditId = null;
@@ -297,6 +315,21 @@ function renderFilters(){
   const el = document.getElementById('filters');
   el.innerHTML = rooms.map(r=>`<button class="chip ${activeFilter===r?'active':''}" data-room="${r}">${r==='all'?'All':r}</button>`).join('');
   el.querySelectorAll('.chip').forEach(btn=>{ btn.onclick = ()=>{ activeFilter = btn.dataset.room; renderList(); renderFilters(); }; });
+  renderGroupFilters();
+}
+
+function renderGroupFilters(){
+  const el = document.getElementById('group-filters');
+  const groupChips = ['all', 'group-1', 'group-2', 'group-3', 'special', 'unsure'].map(g=>{
+    const label = g === 'all' ? 'All light/water needs' : (groupLabels[g] || g);
+    return `<button class="chip group-chip ${activeGroupFilter===g?'active':''}" data-group="${g}">${label}</button>`;
+  }).join('');
+  const propChip = `<button class="chip prop-chip ${propagatingOnly?'active':''}">&#127793; Propagating only</button>`;
+  el.innerHTML = groupChips + propChip;
+  el.querySelectorAll('.group-chip').forEach(btn=>{
+    btn.onclick = ()=>{ activeGroupFilter = btn.dataset.group; renderList(); renderGroupFilters(); };
+  });
+  el.querySelector('.prop-chip').onclick = ()=>{ propagatingOnly = !propagatingOnly; renderList(); renderGroupFilters(); };
 }
 
 function escapeHtml(str){ const div = document.createElement('div'); div.textContent = str || ''; return div.innerHTML; }
@@ -305,8 +338,10 @@ function renderList(){
   const query = document.getElementById('search').value.trim().toLowerCase();
   let filtered = plants.filter(p=>{
     const matchesRoom = activeFilter === 'all' || p.room === activeFilter;
+    const matchesGroup = activeGroupFilter === 'all' || p.group === activeGroupFilter;
+    const matchesPropagating = !propagatingOnly || p.propagating;
     const matchesQuery = !query || p.name.toLowerCase().includes(query) || (p.notes||'').toLowerCase().includes(query);
-    return matchesRoom && matchesQuery;
+    return matchesRoom && matchesGroup && matchesPropagating && matchesQuery;
   });
 
   const countEl = document.getElementById('search-count');
@@ -375,6 +410,7 @@ function renderCard(p){
           ${moveBadge}
           ${lineageBadge}
         </div>
+        <button class="flag-toggle ${p.flagged ? 'active' : ''}" data-id="${p.id}" aria-label="${p.flagged ? 'Remove from gather list' : 'Add to gather list'}">${p.flagged ? '&#9733;' : '&#9734;'}</button>
         <div class="chevron">&#8250;</div>
       </div>
       <div class="plant-body">
@@ -468,6 +504,17 @@ async function loadHistoryInto(id){
 function wireCardEvents(listEl){
   listEl.querySelectorAll('.plant-head').forEach(head=>{
     head.onclick = ()=>{ const id = head.dataset.id; openCardId = openCardId === id ? null : id; renderList(); };
+  });
+  listEl.querySelectorAll('.flag-toggle').forEach(btn=>{
+    btn.onclick = async (e)=>{
+      e.stopPropagation();
+      const id = btn.dataset.id;
+      const plant = plants.find(p=>p.id===id);
+      await api(`/plants/${id}`, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({flagged: !plant.flagged})});
+      await loadPlants();
+      openCardId = openCardId === id ? id : openCardId;
+      render();
+    };
   });
   listEl.querySelectorAll('.btn-log, .cancel-log').forEach(btn=>{
     btn.onclick = (e)=>{ e.stopPropagation(); const id = btn.dataset.id; openLogFormId = openLogFormId === id ? null : id; renderList(); };
@@ -724,6 +771,43 @@ function renderTrash(){
 document.getElementById('open-trash').onclick = openTrash;
 document.getElementById('close-trash').onclick = ()=>trashOverlay.classList.remove('open');
 trashOverlay.onclick = (e)=>{ if(e.target === trashOverlay) trashOverlay.classList.remove('open'); };
+
+const gatherOverlay = document.getElementById('gather-overlay');
+function openGather(){
+  renderGather();
+  gatherOverlay.classList.add('open');
+}
+function renderGather(){
+  const el = document.getElementById('gather-list');
+  const gathered = plants.filter(p=>p.flagged);
+  el.innerHTML = gathered.length
+    ? gathered.map(p=>`
+      <div class="gather-item">
+        <div><strong>${escapeHtml(p.name)}</strong><br><span style="font-size:11px;color:var(--ink-muted);">${escapeHtml(p.room)}</span></div>
+        <button class="btn btn-secondary unflag-gather" data-id="${p.id}">Got it</button>
+      </div>`).join('')
+    : '<div class="empty-log">Nothing starred yet. Tap the star on a plant to add it here.</div>';
+  el.querySelectorAll('.unflag-gather').forEach(btn=>{
+    btn.onclick = async ()=>{
+      await api(`/plants/${btn.dataset.id}`, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({flagged: false})});
+      await loadPlants();
+      render();
+      renderGather();
+    };
+  });
+}
+document.getElementById('open-gather').onclick = openGather;
+document.getElementById('close-gather').onclick = ()=>gatherOverlay.classList.remove('open');
+gatherOverlay.onclick = (e)=>{ if(e.target === gatherOverlay) gatherOverlay.classList.remove('open'); };
+document.getElementById('clear-gather').onclick = async ()=>{
+  const gathered = plants.filter(p=>p.flagged);
+  if(!gathered.length) return;
+  if(!confirm('Clear the whole gather list?')) return;
+  await api('/plants/bulk-update', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ids: gathered.map(p=>p.id), changes:{flagged:false}})});
+  await loadPlants();
+  render();
+  renderGather();
+};
 
 const compareOverlay = document.getElementById('compare-overlay');
 function renderComparePhoto(elId, plantId){

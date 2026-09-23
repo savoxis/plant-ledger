@@ -87,6 +87,9 @@ if (!plantsCols.includes('potted_at')) {
 if (!plantsCols.includes('parent_id')) {
   db.exec('ALTER TABLE plants ADD COLUMN parent_id TEXT');
 }
+if (!plantsCols.includes('flagged')) {
+  db.exec('ALTER TABLE plants ADD COLUMN flagged INTEGER DEFAULT 0');
+}
 
 // One-time seed on first boot (empty DB only) -- decodes any embedded
 // base64 photos from seed-data.json into real files under PHOTOS_DIR.
@@ -307,6 +310,7 @@ function rowToPlant(row) {
     parentName,
     pottedAt: row.potted_at || null,
     deletedAt: row.deleted_at || null,
+    flagged: !!row.flagged,
     photos,
     log: logs,
   };
@@ -335,6 +339,7 @@ function applyPlantUpdate(id, changes, source) {
     new_location: changes.newLocation !== undefined ? changes.newLocation : existing.new_location,
     price_paid: price !== undefined ? price : existing.price_paid,
     parent_id: changes.parentId !== undefined ? (changes.parentId || null) : existing.parent_id,
+    flagged: changes.flagged !== undefined ? (changes.flagged ? 1 : 0) : existing.flagged,
   };
 
   let pottedAt = existing.potted_at;
@@ -342,14 +347,18 @@ function applyPlantUpdate(id, changes, source) {
   if (!existing.propagating && next.propagating) pottedAt = null;
 
   db.prepare(`
-    UPDATE plants SET name=?, room=?, group_name=?, status=?, notes=?, propagating=?, new_location=?, price_paid=?, parent_id=?, potted_at=?
+    UPDATE plants SET name=?, room=?, group_name=?, status=?, notes=?, propagating=?, new_location=?, price_paid=?, parent_id=?, potted_at=?, flagged=?
     WHERE id=?
   `).run(
     next.name, next.room, next.group_name, next.status, next.notes,
-    next.propagating, next.new_location, next.price_paid, next.parent_id, pottedAt,
+    next.propagating, next.new_location, next.price_paid, next.parent_id, pottedAt, next.flagged,
     id
   );
 
+  // flagged (the "gather list" toggle) is deliberately not audited or
+  // undoable -- it's ephemeral task state from walking through plants
+  // during a watering round, not a durable fact worth a permanent
+  // history entry.
   const fieldDiffs = [
     ['name', existing.name, next.name],
     ['room', existing.room, next.room],
