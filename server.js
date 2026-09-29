@@ -55,6 +55,11 @@ db.exec(`
     source TEXT NOT NULL DEFAULT 'agent',
     created_at TEXT DEFAULT (datetime('now'))
   );
+  CREATE TABLE IF NOT EXISTS room_photos (
+    room TEXT PRIMARY KEY,
+    filename TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
 `);
 
 // One-time, idempotent migration: plants.photo_filename was the old
@@ -650,6 +655,62 @@ app.delete('/api/plants/:id/photos/:photoId', (req, res) => {
   db.prepare('DELETE FROM photos WHERE id = ?').run(photo.id);
   logAudit(req.params.id, 'photo_removed', photo.filename, null, getSource(req));
   res.json(rowToPlant(db.prepare('SELECT * FROM plants WHERE id = ?').get(req.params.id)));
+});
+
+// One photo per room (not per plant) -- a group shot of the shelf/area
+// itself, shown next to the room heading in the list. Keyed by the room
+// name string since rooms aren't a normalized entity anywhere else in
+// this app; renaming a room's plants to a new room string starts that
+// new room with no photo of its own. Uploading replaces whatever was
+// there before, unlike plant photos which always add to the list --
+// a room only ever has the one representative shot.
+function slugifyRoom(room) {
+  return room.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'room';
+}
+
+app.get('/api/rooms/photos', (req, res) => {
+  const rows = db.prepare('SELECT room, filename FROM room_photos').all();
+  const result = {};
+  rows.forEach((r) => { result[r.room] = `/photos/${r.filename}`; });
+  res.json(result);
+});
+
+app.post('/api/rooms/:room/photo', upload.single('photo'), async (req, res) => {
+  const room = req.params.room;
+  if (!req.file) return res.status(400).json({ error: 'no file uploaded' });
+
+  const filename = `room-${slugifyRoom(room)}-${Date.now()}.jpg`;
+  try {
+    await sharp(req.file.buffer)
+      .rotate()
+      .resize(800, 800, { fit: 'inside', withoutEnlargement: true })
+      .jpeg({ quality: 74 })
+      .toFile(path.join(PHOTOS_DIR, filename));
+  } catch (err) {
+    return res.status(400).json({ error: 'could not process image' });
+  }
+
+  const existing = db.prepare('SELECT filename FROM room_photos WHERE room = ?').get(room);
+  db.prepare(`
+    INSERT INTO room_photos (room, filename) VALUES (?, ?)
+    ON CONFLICT(room) DO UPDATE SET filename = excluded.filename, created_at = datetime('now')
+  `).run(room, filename);
+  if (existing) {
+    const oldPath = path.join(PHOTOS_DIR, existing.filename);
+    if (fs.existsSync(oldPath)) fs.unlinkSync(oldPath);
+  }
+  res.json({ room, url: `/photos/${filename}` });
+});
+
+app.delete('/api/rooms/:room/photo', (req, res) => {
+  const room = req.params.room;
+  const existing = db.prepare('SELECT filename FROM room_photos WHERE room = ?').get(room);
+  if (!existing) return res.status(404).json({ error: 'no photo set for this room' });
+
+  const fp = path.join(PHOTOS_DIR, existing.filename);
+  if (fs.existsSync(fp)) fs.unlinkSync(fp);
+  db.prepare('DELETE FROM room_photos WHERE room = ?').run(room);
+  res.json({ ok: true });
 });
 
 // Convenience JSON export (metadata + photo URLs). The real backup is the
