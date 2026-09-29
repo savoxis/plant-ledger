@@ -148,6 +148,19 @@ existing photos — it adds one. Server-side, every upload gets
 auto-rotated, resized to fit 800×800, and re-encoded as JPEG — don't
 pre-process images before sending.
 
+### Room photos — one per room, not part of a plant record
+
+A separate concept from plant photos: one representative group shot
+per room (e.g. a photo of the whole Plant Room shelf), shown next to
+the room heading in the UI, not tied to any individual plant. Keyed by
+the room name string itself, since rooms aren't a normalized entity
+anywhere else in this app — see the room photo endpoints below.
+Uploading **replaces** whatever photo was there before (opposite of
+plant photos, which always add to the list) — a room only ever has the
+one current shot. If she renames all the plants in a room to a
+different room string, the new room name starts with no photo of its
+own; the old room's photo doesn't automatically follow.
+
 ## API reference
 
 | Method | Path | Body | Notes |
@@ -165,6 +178,9 @@ pre-process images before sending.
 | POST | `/api/plants/:id/logs` | `{type, note}` | date is set server-side to today |
 | POST | `/api/plants/:id/photos` | multipart, field name `photo` | adds one photo; call once per file for multiple |
 | DELETE | `/api/plants/:id/photos/:photoId` | — | removes one specific photo by its numeric id (from the `photos` array) |
+| GET | `/api/rooms/photos` | — | `{roomName: url}` map of every room that currently has a photo set. Rooms with none are simply absent from the object — no `null` entries. |
+| POST | `/api/rooms/:room/photo` | multipart, field name `photo` | sets/**replaces** that room's one photo (URL-encode the room name, e.g. `Living%20Room`) |
+| DELETE | `/api/rooms/:room/photo` | — | removes that room's photo. 404s if the room doesn't currently have one. |
 | GET | `/api/export` | — | full JSON snapshot, useful if she asks "what do I have" in bulk |
 | GET | `/api/claude-snapshot` | — | everything `/api/plants` has, plus every photo embedded as a base64 data URI in one response. Use this specifically when you need to actually *see* her plants (identifying something from a photo, checking on a plant's visible condition) — it's heavier, so don't use it for plain text questions `/api/plants` already answers. |
 | POST | `/api/plants/bulk-update` | `{ids: [...], changes: {...same fields as PUT...}}` | applies the same partial update to every id; returns `{updated, notFound}`. Resolve names to ids via `/api/plants` first — never fuzzy-match names server-side or here. |
