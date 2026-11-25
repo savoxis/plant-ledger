@@ -296,7 +296,7 @@ function rowToPlant(row) {
     .prepare('SELECT date, type, note FROM logs WHERE plant_id = ? ORDER BY id DESC')
     .all(row.id);
   const photos = db
-    .prepare('SELECT id, filename FROM photos WHERE plant_id = ? ORDER BY position, id')
+    .prepare('SELECT id, filename FROM photos WHERE plant_id = ? ORDER BY position DESC, id DESC') // newest first: photos[0] is the card icon
     .all(row.id)
     .map((p) => ({ id: p.id, url: `/photos/${p.filename}` }));
   let parentName = null;

@@ -135,7 +135,7 @@ documented instead or in addition.
 | POST   | `/api/plants/confirm-moves` | Apply pending "planned new spot" moves for several (or all) plants at once |
 
 Each plant supports multiple photos (`photos: [{id, url}, ...]` in the
-API response), ordered by upload order.
+API response), ordered newest first.
 
 ### Data integrity: trash, audit trail, undo
 

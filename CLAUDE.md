@@ -151,7 +151,7 @@ she explicitly asks you to log it anyway (then use `Other`).
 
 ### Photos
 
-Multiple per plant, ordered by upload order. Uploading never replaces
+Multiple per plant, ordered newest first (so `photos[0]`, the card icon, is always the most recent upload). Uploading never replaces
 existing photos — it adds one. Server-side, every upload gets
 auto-rotated, resized to fit 800×800, and re-encoded as JPEG — don't
 pre-process images before sending.
