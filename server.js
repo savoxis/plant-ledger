@@ -95,6 +95,9 @@ if (!plantsCols.includes('parent_id')) {
 if (!plantsCols.includes('flagged')) {
   db.exec('ALTER TABLE plants ADD COLUMN flagged INTEGER DEFAULT 0');
 }
+if (!plantsCols.includes('nickname')) {
+  db.exec("ALTER TABLE plants ADD COLUMN nickname TEXT DEFAULT ''");
+}
 
 // One-time seed on first boot (empty DB only) -- decodes any embedded
 // base64 photos from seed-data.json into real files under PHOTOS_DIR.
@@ -304,6 +307,7 @@ function rowToPlant(row) {
   return {
     id: row.id,
     name: row.name,
+    nickname: row.nickname || '',
     room: row.room,
     group: row.group_name,
     status: row.status,
@@ -336,6 +340,7 @@ function applyPlantUpdate(id, changes, source) {
 
   const next = {
     name: changes.name ?? existing.name,
+    nickname: changes.nickname !== undefined ? String(changes.nickname ?? '').trim() : (existing.nickname || ''),
     room: changes.room ?? existing.room,
     group_name: changes.group ?? existing.group_name,
     status: changes.status ?? existing.status,
@@ -352,10 +357,10 @@ function applyPlantUpdate(id, changes, source) {
   if (!existing.propagating && next.propagating) pottedAt = null;
 
   db.prepare(`
-    UPDATE plants SET name=?, room=?, group_name=?, status=?, notes=?, propagating=?, new_location=?, price_paid=?, parent_id=?, potted_at=?, flagged=?
+    UPDATE plants SET name=?, nickname=?, room=?, group_name=?, status=?, notes=?, propagating=?, new_location=?, price_paid=?, parent_id=?, potted_at=?, flagged=?
     WHERE id=?
   `).run(
-    next.name, next.room, next.group_name, next.status, next.notes,
+    next.name, next.nickname, next.room, next.group_name, next.status, next.notes,
     next.propagating, next.new_location, next.price_paid, next.parent_id, pottedAt, next.flagged,
     id
   );
@@ -366,6 +371,7 @@ function applyPlantUpdate(id, changes, source) {
   // history entry.
   const fieldDiffs = [
     ['name', existing.name, next.name],
+    ['nickname', existing.nickname || '', next.nickname],
     ['room', existing.room, next.room],
     ['group', existing.group_name, next.group_name],
     ['status', existing.status, next.status],
@@ -402,7 +408,7 @@ app.get('/api/plants/:id/audit', (req, res) => {
 });
 
 app.post('/api/plants', (req, res) => {
-  const { name, room, group, status, notes, propagating, newLocation, pricePaid, parentId } = req.body;
+  const { name, nickname, room, group, status, notes, propagating, newLocation, pricePaid, parentId } = req.body;
   if (!name || !room) return res.status(400).json({ error: 'name and room are required' });
   let price;
   try {
@@ -412,9 +418,9 @@ app.post('/api/plants', (req, res) => {
   }
   const id = 'p' + crypto.randomBytes(6).toString('hex');
   db.prepare(`
-    INSERT INTO plants (id, name, room, group_name, status, notes, propagating, new_location, price_paid, parent_id)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(id, name, room, group || 'unsure', status || 'confirmed', notes || '', propagating ? 1 : 0, newLocation || '', price ?? null, parentId || null);
+    INSERT INTO plants (id, name, nickname, room, group_name, status, notes, propagating, new_location, price_paid, parent_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(id, name, nickname ? String(nickname).trim() : '', room, group || 'unsure', status || 'confirmed', notes || '', propagating ? 1 : 0, newLocation || '', price ?? null, parentId || null);
   logAudit(id, '(created)', null, name, getSource(req));
   res.json(rowToPlant(db.prepare('SELECT * FROM plants WHERE id = ?').get(id)));
 });
@@ -468,9 +474,9 @@ app.delete('/api/plants/:id/permanent', (req, res) => {
 // itself written as a new audit_log row (source 'undo') rather than
 // erasing history, so the log stays an honest append-only record of
 // what actually happened, undo included.
-const UNDOABLE_FIELDS = ['name', 'room', 'group', 'status', 'notes', 'propagating', 'newLocation', 'pricePaid', 'parentId'];
+const UNDOABLE_FIELDS = ['name', 'nickname', 'room', 'group', 'status', 'notes', 'propagating', 'newLocation', 'pricePaid', 'parentId'];
 const FIELD_TO_COLUMN = {
-  name: 'name', room: 'room', group: 'group_name', status: 'status', notes: 'notes',
+  name: 'name', nickname: 'nickname', room: 'room', group: 'group_name', status: 'status', notes: 'notes',
   propagating: 'propagating', newLocation: 'new_location', pricePaid: 'price_paid', parentId: 'parent_id',
 };
 function coerceAuditValue(field, stored) {

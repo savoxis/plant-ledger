@@ -41,6 +41,7 @@ A plant:
 {
   "id": "p1a2b3c4d5e6",
   "name": "Monstera 'Burle Marx Flame'",
+  "nickname": "",
   "room": "Living Room",
   "group": "group-1",
   "status": "confirmed",
@@ -57,6 +58,13 @@ A plant:
   "log": [{ "date": "2026-06-02", "type": "Soil", "note": "Repacked with extra perlite" }]
 }
 ```
+
+### `nickname` — optional pet name, shown under the real name
+
+Free text, defaults to `""`. Purely cosmetic: it is displayed in italics
+under `name` on the card and is searchable, but never replaces `name`
+(the real species/cultivar name stays authoritative). Accepted on
+POST and PUT, audited and undoable like `name`.
 
 ### `parentId` — lineage, not care group
 
