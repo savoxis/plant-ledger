@@ -83,6 +83,13 @@ const plantsCols = db.prepare("PRAGMA table_info(plants)").all().map((c) => c.na
 if (!plantsCols.includes('price_paid')) {
   db.exec('ALTER TABLE plants ADD COLUMN price_paid REAL');
 }
+if (!plantsCols.includes('is_free')) {
+  // Free is its own flag now, so a free plant can still carry a dollar
+  // amount (what it would have cost) without counting as money spent.
+  // Plants already stored as price 0 were the old way of saying "free".
+  db.exec('ALTER TABLE plants ADD COLUMN is_free INTEGER DEFAULT 0');
+  db.exec('UPDATE plants SET is_free = 1 WHERE price_paid = 0');
+}
 if (!plantsCols.includes('deleted_at')) {
   db.exec('ALTER TABLE plants ADD COLUMN deleted_at TEXT');
 }
@@ -107,8 +114,8 @@ if (existingCount === 0) {
   if (fs.existsSync(seedPath)) {
     const seed = JSON.parse(fs.readFileSync(seedPath, 'utf8'));
     const insertPlant = db.prepare(`
-      INSERT INTO plants (id, name, room, group_name, status, notes, propagating, new_location, price_paid)
-      VALUES (@id, @name, @room, @group_name, @status, @notes, @propagating, @new_location, @price_paid)
+      INSERT INTO plants (id, name, room, group_name, status, notes, propagating, new_location, price_paid, is_free)
+      VALUES (@id, @name, @room, @group_name, @status, @notes, @propagating, @new_location, @price_paid, @is_free)
     `);
     const insertLog = db.prepare(
       'INSERT INTO logs (plant_id, date, type, note) VALUES (?, ?, ?, ?)'
@@ -128,6 +135,7 @@ if (existingCount === 0) {
           propagating: p.propagating ? 1 : 0,
           new_location: p.newLocation || '',
           price_paid: p.pricePaid ?? null,
+          is_free: p.pricePaid === 0 ? 1 : 0,
         });
         if (p.photo && p.photo.startsWith('data:image')) {
           const b64 = p.photo.split(',')[1];
@@ -271,6 +279,21 @@ function normalizePrice(value) {
   return n;
 }
 
+// What a free plant saved: its own dollar amount if one was entered,
+// otherwise the price of the plant it was propagated from (walking up
+// through free parents to the first one that was bought). Looks at
+// trashed parents too, so losing the parent doesn't erase the savings.
+function savedValueFor(row, seen = new Set()) {
+  if (!row || seen.has(row.id)) return 0;
+  seen.add(row.id);
+  if (row.price_paid > 0) return row.price_paid;
+  if (!row.parent_id) return 0;
+  const parent = db.prepare('SELECT * FROM plants WHERE id = ?').get(row.parent_id);
+  if (!parent) return 0;
+  if (parent.is_free) return savedValueFor(parent, seen);
+  return parent.price_paid > 0 ? parent.price_paid : 0;
+}
+
 // Flags (doesn't block) a save where notes mentions a different room
 // than the one on record -- the thing that let entries drift out of
 // sync with reality (notes saying "moved to the coffee table",
@@ -315,6 +338,8 @@ function rowToPlant(row) {
     propagating: !!row.propagating,
     newLocation: row.new_location || '',
     pricePaid: row.price_paid,
+    isFree: !!row.is_free,
+    savedValue: row.is_free ? Math.round(savedValueFor(row) * 100) / 100 : 0,
     parentId: row.parent_id || null,
     parentName,
     pottedAt: row.potted_at || null,
@@ -348,6 +373,8 @@ function applyPlantUpdate(id, changes, source) {
     propagating: changes.propagating !== undefined ? (changes.propagating ? 1 : 0) : existing.propagating,
     new_location: changes.newLocation !== undefined ? changes.newLocation : existing.new_location,
     price_paid: price !== undefined ? price : existing.price_paid,
+    // isFree wins when sent; otherwise a price of exactly 0 still means free (old API behavior); otherwise unchanged.
+    is_free: changes.isFree !== undefined ? (changes.isFree ? 1 : 0) : (price === 0 ? 1 : (existing.is_free || 0)),
     parent_id: changes.parentId !== undefined ? (changes.parentId || null) : existing.parent_id,
     flagged: changes.flagged !== undefined ? (changes.flagged ? 1 : 0) : existing.flagged,
   };
@@ -357,11 +384,11 @@ function applyPlantUpdate(id, changes, source) {
   if (!existing.propagating && next.propagating) pottedAt = null;
 
   db.prepare(`
-    UPDATE plants SET name=?, nickname=?, room=?, group_name=?, status=?, notes=?, propagating=?, new_location=?, price_paid=?, parent_id=?, potted_at=?, flagged=?
+    UPDATE plants SET name=?, nickname=?, room=?, group_name=?, status=?, notes=?, propagating=?, new_location=?, price_paid=?, is_free=?, parent_id=?, potted_at=?, flagged=?
     WHERE id=?
   `).run(
     next.name, next.nickname, next.room, next.group_name, next.status, next.notes,
-    next.propagating, next.new_location, next.price_paid, next.parent_id, pottedAt, next.flagged,
+    next.propagating, next.new_location, next.price_paid, next.is_free, next.parent_id, pottedAt, next.flagged,
     id
   );
 
@@ -379,6 +406,7 @@ function applyPlantUpdate(id, changes, source) {
     ['propagating', !!existing.propagating, !!next.propagating],
     ['newLocation', existing.new_location, next.new_location],
     ['pricePaid', existing.price_paid, next.price_paid],
+    ['isFree', !!existing.is_free, !!next.is_free],
     ['parentId', existing.parent_id, next.parent_id],
   ];
   fieldDiffs.forEach(([field, oldV, newV]) => {
@@ -408,7 +436,7 @@ app.get('/api/plants/:id/audit', (req, res) => {
 });
 
 app.post('/api/plants', (req, res) => {
-  const { name, nickname, room, group, status, notes, propagating, newLocation, pricePaid, parentId } = req.body;
+  const { name, nickname, room, group, status, notes, propagating, newLocation, pricePaid, isFree, parentId } = req.body;
   if (!name || !room) return res.status(400).json({ error: 'name and room are required' });
   let price;
   try {
@@ -418,9 +446,9 @@ app.post('/api/plants', (req, res) => {
   }
   const id = 'p' + crypto.randomBytes(6).toString('hex');
   db.prepare(`
-    INSERT INTO plants (id, name, nickname, room, group_name, status, notes, propagating, new_location, price_paid, parent_id)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(id, name, nickname ? String(nickname).trim() : '', room, group || 'unsure', status || 'confirmed', notes || '', propagating ? 1 : 0, newLocation || '', price ?? null, parentId || null);
+    INSERT INTO plants (id, name, nickname, room, group_name, status, notes, propagating, new_location, price_paid, is_free, parent_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(id, name, nickname ? String(nickname).trim() : '', room, group || 'unsure', status || 'confirmed', notes || '', propagating ? 1 : 0, newLocation || '', price ?? null, (isFree !== undefined ? !!isFree : price === 0) ? 1 : 0, parentId || null);
   logAudit(id, '(created)', null, name, getSource(req));
   res.json(rowToPlant(db.prepare('SELECT * FROM plants WHERE id = ?').get(id)));
 });
@@ -474,14 +502,14 @@ app.delete('/api/plants/:id/permanent', (req, res) => {
 // itself written as a new audit_log row (source 'undo') rather than
 // erasing history, so the log stays an honest append-only record of
 // what actually happened, undo included.
-const UNDOABLE_FIELDS = ['name', 'nickname', 'room', 'group', 'status', 'notes', 'propagating', 'newLocation', 'pricePaid', 'parentId'];
+const UNDOABLE_FIELDS = ['name', 'nickname', 'room', 'group', 'status', 'notes', 'propagating', 'newLocation', 'pricePaid', 'isFree', 'parentId'];
 const FIELD_TO_COLUMN = {
   name: 'name', nickname: 'nickname', room: 'room', group: 'group_name', status: 'status', notes: 'notes',
-  propagating: 'propagating', newLocation: 'new_location', pricePaid: 'price_paid', parentId: 'parent_id',
+  propagating: 'propagating', newLocation: 'new_location', pricePaid: 'price_paid', isFree: 'is_free', parentId: 'parent_id',
 };
 function coerceAuditValue(field, stored) {
   if (stored === null || stored === undefined) return null;
-  if (field === 'propagating') return stored === 'true' ? 1 : 0;
+  if (field === 'propagating' || field === 'isFree') return stored === 'true' ? 1 : 0;
   if (field === 'pricePaid') return Number(stored);
   return stored;
 }
