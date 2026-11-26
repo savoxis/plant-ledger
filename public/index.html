@@ -211,7 +211,7 @@
     </div>
     <div class="field"><label>Notes (optional)</label><textarea id="new-notes"></textarea></div>
     <div class="field">
-      <label>Price paid (optional)</label>
+      <label>Price paid, or value saved if free (optional)</label>
       <div class="price-row">
         <input type="number" step="0.01" min="0" id="new-price" placeholder="Leave blank if unknown">
         <label class="free-check"><input type="checkbox" id="new-price-free" style="width:auto;">Free</label>
@@ -313,10 +313,13 @@ async function loadPlants(){
 
 async function render(){
   document.getElementById('total-count').textContent = plants.length + ' plants tracked';
-  const totalSpent = plants.reduce((sum, p) => sum + (typeof p.pricePaid === 'number' ? p.pricePaid : 0), 0);
-  const freeCount = plants.filter(p => p.pricePaid === 0).length;
+  // A plant marked Free never counts as money spent, even if it has an
+  // amount in the price box; that amount is what it saved instead.
+  const totalSpent = plants.reduce((sum, p) => sum + (!p.isFree && typeof p.pricePaid === 'number' ? p.pricePaid : 0), 0);
+  const freeCount = plants.filter(p => p.isFree).length;
+  const totalSaved = plants.reduce((sum, p) => sum + (p.isFree ? (p.savedValue || 0) : 0), 0);
   document.getElementById('spend-summary').textContent =
-    '$' + totalSpent.toFixed(2) + ' spent so far · ' + freeCount + ' free';
+    '$' + totalSpent.toFixed(2) + ' spent so far · ' + freeCount + ' free · $' + totalSaved.toFixed(2) + ' saved on free plants';
   renderFilters();
   renderList();
 }
@@ -482,11 +485,12 @@ function renderCard(p){
         ${p.notes ? `<div class="notes">${escapeHtml(p.notes)}</div>` : ''}
         ${pottedNote}
         <div class="field">
-          <label>Price paid</label>
+          <label>${p.isFree ? 'Value saved (optional)' : 'Price paid'}</label>
           <div class="price-row">
-            <input type="number" step="0.01" min="0" class="price-input" data-id="${p.id}" value="${p.pricePaid ? p.pricePaid : ''}" placeholder="Leave blank if unknown" ${p.pricePaid === 0 ? 'disabled' : ''}>
-            <label class="free-check"><input type="checkbox" class="price-free" data-id="${p.id}" style="width:auto;" ${p.pricePaid === 0 ? 'checked' : ''}>Free</label>
+            <input type="number" step="0.01" min="0" class="price-input" data-id="${p.id}" value="${p.pricePaid ? p.pricePaid : ''}" placeholder="${p.isFree ? 'What it would have cost' : 'Leave blank if unknown'}">
+            <label class="free-check"><input type="checkbox" class="price-free" data-id="${p.id}" style="width:auto;" ${p.isFree ? 'checked' : ''}>Free</label>
           </div>
+          ${p.isFree && !(p.pricePaid > 0) && p.savedValue > 0 ? `<div style="font-size:12px;color:var(--ink-muted);margin-top:4px;">Counting $${p.savedValue.toFixed(2)} saved from the plant it came from.</div>` : ''}
         </div>
         <div class="location-field">
           <label>Planned new spot (once regrouped)</label>
@@ -685,7 +689,7 @@ function wireCardEvents(listEl){
     checkbox.onclick = (e)=>e.stopPropagation();
     checkbox.onchange = async ()=>{
       const id = checkbox.dataset.id;
-      await api(`/plants/${id}`, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({pricePaid: checkbox.checked ? 0 : null})});
+      await api(`/plants/${id}`, {method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({isFree: checkbox.checked})});
       await loadPlants();
       openCardId = id;
       render();
@@ -753,11 +757,6 @@ document.getElementById('close-modal').onclick = closeModal;
 document.getElementById('cancel-add').onclick = closeModal;
 overlay.onclick = (e)=>{ if(e.target === overlay) closeModal(); };
 
-document.getElementById('new-price-free').onchange = (e)=>{
-  document.getElementById('new-price').disabled = e.target.checked;
-  if(e.target.checked) document.getElementById('new-price').value = '';
-};
-
 document.getElementById('save-new').onclick = async ()=>{
   const name = document.getElementById('new-name').value.trim();
   if(!name){ alert('Give it a name first.'); return; }
@@ -770,7 +769,8 @@ document.getElementById('save-new').onclick = async ()=>{
     group: document.getElementById('new-group').value,
     status: document.getElementById('new-status').value,
     notes: document.getElementById('new-notes').value.trim(),
-    pricePaid: isFree ? 0 : (priceVal === '' ? null : Number(priceVal)),
+    pricePaid: priceVal === '' ? null : Number(priceVal),
+    isFree,
     parentId: document.getElementById('new-parent').value || null,
     propagating: document.getElementById('new-propagating').checked
   })});

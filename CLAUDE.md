@@ -49,6 +49,8 @@ A plant:
   "propagating": false,
   "newLocation": "",
   "pricePaid": 12.5,
+  "isFree": false,
+  "savedValue": 0,
   "parentId": null,
   "parentName": null,
   "pottedAt": null,
@@ -99,14 +101,28 @@ name. It's deliberately excluded from the audit trail and from undo —
 it's ephemeral task state, not a change worth a permanent history
 entry.
 
-### `pricePaid` — number or null, not the same thing as zero
+### `pricePaid`, `isFree`, `savedValue` — what it cost, whether it was free, what it saved
 
-`null` means "not recorded" — she never said. `0` means she said it
-explicitly was free (gifted, traded, a cutting). If she mentions a
-price while adding or describing a plant, set it; if she doesn't say,
-leave it `null` — don't assume `0`. The header on the live site shows
-a running total (`$X.XX spent so far`) summed from every `pricePaid`
-that isn't `null`, plus a count of plants where it's exactly `0`.
+`pricePaid` is a number or `null`. `null` means "not recorded" — she
+never said. `isFree` is a separate boolean: the Free checkbox. A plant
+marked free is never counted as money spent, even if `pricePaid` holds
+an amount; that amount is what it would have cost, and it counts
+toward the "saved on free plants" total instead.
+
+For backward compatibility, sending `pricePaid: 0` without `isFree`
+also marks the plant free. Sending `isFree` explicitly always wins.
+Sending some other `pricePaid` without `isFree` leaves the flag alone.
+
+`savedValue` is read-only and computed by the server for free plants
+(0 for everything else): the plant's own `pricePaid` if it's above
+zero, otherwise the price of the plant it was propagated from
+(`parentId`), walking up through free parents to the first one that
+was bought. Trashed parents still count. If she mentions a price while
+adding or describing a plant, set `pricePaid`; if she doesn't say,
+leave it `null`.
+
+The header on the live site shows `$X spent so far · N free · $Y saved
+on free plants`.
 
 ### `group` — fixed enum, do not invent new values
 
@@ -175,7 +191,7 @@ own; the old room's photo doesn't automatically follow.
 |---|---|---|---|
 | GET | `/api/health` | — | no auth required |
 | GET | `/api/plants` | — | full list, use this to answer questions about her collection. Excludes trashed plants. |
-| POST | `/api/plants` | `{name, room, group, status, notes, propagating, pricePaid, parentId}` | `name` and `room` required, everything else optional (defaults: `group: "unsure"`, `status: "confirmed"`, `pricePaid: null`) |
+| POST | `/api/plants` | `{name, nickname, room, group, status, notes, propagating, pricePaid, isFree, parentId}` | `name` and `room` required, everything else optional (defaults: `group: "unsure"`, `status: "confirmed"`, `pricePaid: null`) |
 | PUT | `/api/plants/:id` | any subset of the same fields, plus `flagged` (gather-list toggle, PUT-only — can't be set on create) | partial update, only send what's changing. Response may include a `warning` string (see Data integrity below) — surface it to her, don't just discard it. |
 | DELETE | `/api/plants/:id` | — | soft delete (moves to trash, recoverable for 30 days) — still confirm with her first |
 | POST | `/api/plants/:id/restore` | — | takes a plant out of the trash |
